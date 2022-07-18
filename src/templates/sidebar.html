@@ -5,11 +5,13 @@
                 <ul class="nav flex-column">
                     <li class="nav-item"><a class="nav-link sb-home-url" href="/">Home</a></li>
                     {% if "username" in session %}
-                        <li class="nav-item"><a class="nav-link sb-settings-url" href="/settings">Settings</a></li>
+                    <li class="nav-item"><a class="nav-link sb-settings-url" href="/settings">Settings</a></li>
                     {% endif %}
                     {% if session['update'] == "true" %}
                     <li class="nav-item sb-update-li">
-                        <a class="nav-link sb-update-url" href="https://github.com/donaldzou/WGDashboard#-how-to-update-the-dashboard">New Update Available!<span class="dot dot-running"></span></a>
+                        <a class="nav-link sb-update-url"
+                            href="https://github.com/donaldzou/WGDashboard#-how-to-update-the-dashboard">New Update
+                            Available!<span class="dot dot-running"></span></a>
                     </li>
                     {% endif %}
                 </ul>
@@ -18,8 +20,10 @@
                     <span>Configurations</span>
                 </h6>
                 <ul class="nav flex-column">
+                    <div class="btn btn-success btn-sm">Add config</div>
                     {% for i in conf%}
-                        <li class="nav-item"><a class="nav-link sb-{{i['conf']}}-url" href="/configuration/{{i['conf']}}"><samp>{{i['conf']}}</samp></a></li>
+                    <li class="nav-item"><a class="nav-link sb-{{i['conf']}}-url"
+                            href="/configuration/{{i['conf']}}"><samp>{{i['conf']}}</samp></a></li>
                     {%endfor%}
                 </ul>
                 <hr>
@@ -28,19 +32,24 @@
                 </h6>
                 <ul class="nav flex-column">
                     <ul class="nav flex-column">
-                            <li class="nav-item"><a class="nav-link" data-toggle="modal" data-target="#ping_modal" href="#">Ping</a></li>
-                        <li class="nav-item"><a class="nav-link" data-toggle="modal" data-target="#traceroute_modal" href="#">Traceroute</a></li>
+                        <li class="nav-item"><a class="nav-link" data-toggle="modal" data-target="#ping_modal"
+                                href="#">Ping</a></li>
+                        <li class="nav-item"><a class="nav-link" data-toggle="modal" data-target="#traceroute_modal"
+                                href="#">Traceroute</a></li>
                     </ul>
                 </ul>
                 <hr>
                 {% if "username" in session %}
-                    <ul class="nav flex-column">
-                            <li class="nav-item"><a class="nav-link text-danger" href="/signout" style="font-weight: bold">Sign Out</a></li>
-                    </ul>
+                <ul class="nav flex-column">
+                    <li class="nav-item"><a class="nav-link text-danger" href="/signout" style="font-weight: bold">Sign
+                            Out</a></li>
+                </ul>
                 {% endif %}
-                 <ul class="nav flex-column">
-                     <li class="nav-item"><a href="https://github.com/donaldzou/WGDashboard/releases/tag/{{ session['dashboard_version'] }}"><small class="nav-link text-muted">{{ session['dashboard_version'] }}</small></a></li>
-                 </ul>
+                <ul class="nav flex-column">
+                    <li class="nav-item"><a
+                            href="https://github.com/donaldzou/WGDashboard/releases/tag/{{ session['dashboard_version'] }}"><small
+                                class="nav-link text-muted">{{ session['dashboard_version'] }}</small></a></li>
+                </ul>
             </div>
         </nav>
     </div>
