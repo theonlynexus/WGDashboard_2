@@ -50,11 +50,9 @@ from util import (
 # Dashboard Version
 DASHBOARD_VERSION = "v3.0.6"
 
-# WireGuard's configuration path
-WG_CONF_PATH = None
-
 # Dashboard Config Name
 configuration_path = "/config"
+WG_CONF = os.path.join(configuration_path, "wg0.conf")
 DB_PATH = os.path.join(configuration_path, "db")
 if not os.path.isdir(DB_PATH):
     os.mkdir(DB_PATH)
@@ -73,7 +71,6 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 # Enable QR Code Generator
 QRcode(app)
-
 
 # TODO: use class and object oriented programming
 
@@ -156,7 +153,7 @@ def get_conf_running_peer_number(config_name):
     return running
 
 
-def read_conf_file_interface(config_name):
+def read_conf_file_interface():
     """
     Get interface settings.
     @param config_name: Name of WG interface
@@ -165,7 +162,7 @@ def read_conf_file_interface(config_name):
     @rtype: dict
     """
 
-    conf_location = WG_CONF_PATH + "/" + config_name + ".conf"
+    conf_location = WG_CONF
     with open(conf_location, "r", encoding="utf-8") as file_object:
         file = file_object.read().split("\n")
         data = {}
@@ -188,7 +185,7 @@ def read_conf_file(config_name):
     @rtype: dict
     """
 
-    conf_location = WG_CONF_PATH + "/" + config_name + ".conf"
+    conf_location = WG_CONF + "/" + config_name + ".conf"
     f = open(conf_location, "r")
     file = f.read().split("\n")
     conf_peer_data = {"Interface": {}, "Peers": []}
@@ -488,7 +485,7 @@ def get_conf_pub_key(config_name):
 
     try:
         conf = configparser.ConfigParser(strict=False)
-        conf.read(WG_CONF_PATH + "/" + config_name + ".conf")
+        conf.read(WG_CONF + "/" + config_name + ".conf")
         pri = conf.get("Interface", "PrivateKey")
         pub = subprocess.check_output(
             f"echo '{pri}' | wg pubkey", shell=True, stderr=subprocess.STDOUT
@@ -509,7 +506,7 @@ def get_conf_listen_port(config_name):
     """
 
     conf = configparser.ConfigParser(strict=False)
-    conf.read(WG_CONF_PATH + "/" + config_name + ".conf")
+    conf.read(WG_CONF + "/" + config_name + ".conf")
     port = ""
     try:
         port = conf.get("Interface", "ListenPort")
@@ -565,7 +562,7 @@ def get_conf_list():
     """
 
     conf = []
-    for i in os.listdir(WG_CONF_PATH):
+    for i in os.listdir(WG_CONF):
         if regex_match("^(.{1,}).(conf)$", i):
             i = i.replace(".conf", "")
             create_table = f"""
@@ -2066,8 +2063,8 @@ def run_dashboard():
     app_ip = config.get("Server", "app_ip")
     # global app_port
     app_port = config.get("Server", "app_port")
-    global WG_CONF_PATH
-    WG_CONF_PATH = config.get("Server", "wg_conf_path")
+    global WG_CONF
+    WG_CONF = config.get("Server", "wg_conf_path")
     config.clear()
     return app
 
@@ -2093,6 +2090,6 @@ if __name__ == "__main__":
     app_ip = config.get("Server", "app_ip")
     # global app_port
     app_port = config.get("Server", "app_port")
-    WG_CONF_PATH = config.get("Server", "wg_conf_path")
+    WG_CONF = config.get("Server", "wg_conf_path")
     config.clear()
     app.run(host=app_ip, debug=False, port=app_port)
