@@ -59,8 +59,11 @@ DB_PATH = os.path.join(configuration_path, "db")
 if not os.path.isdir(DB_PATH):
     os.mkdir(DB_PATH)
 DASHBOARD_CONF = os.path.join(configuration_path, "wg-dashboard.ini")
-SERVER_PRIVATE_KEY = os.path.join(configuration_path, "server", "privatekey-server")
-SERVER_PUBLIC_KEY = os.path.join(configuration_path, "server", "publickey-server")
+SERVER_PRIVATE_KEY_FILE = os.path.join(
+    configuration_path, "server", "privatekey-server"
+)
+SERVER_PUBLIC_KEY_FILE = os.path.join(configuration_path, "server", "publickey-server")
+SERVER_CONFIG_FILE = os.path.join(configuration_path, "wg0.conf")
 
 # Upgrade Required
 UPDATE = None
@@ -1972,10 +1975,54 @@ Dashboard Initialization
 """
 
 
+def create_wg_server_keys_if_missing():
+    """
+    Creates /config/server/{private|public}key-server files if the private key is missing.
+    """
+    if not os.path.isfile(SERVER_PRIVATE_KEY_FILE):
+        output = subprocess.check_output(
+            f"wg genkey | tee /config/server/privatekey-server | wg pubkey > /config/server/publickey-server",
+            shell=True,
+        )
+
+
+def wg_server_private_key() -> str:
+    """
+    Returns the contents of config/server/privatekey-server.
+    """
+    with open(SERVER_PRIVATE_KEY_FILE, "r") as f:
+        key = f.readline
+    return key
+
+
+def wg_server_public_key() -> str:
+    """
+    Returns the contents of config/server/publickey-server.
+    """
+    with open(SERVER_PUBLIC_KEY_FILE, "r") as f:
+        key = f.readline
+    return key
+
+
+def create_wg_server_config_if_missing():
+    """
+    Creates /config/wg0.conf if missing.
+    """
+    create_wg_server_keys_if_missing()
+    if not os.path.isfile(SERVER_CONFIG_FILE):
+        rendered = render_template(
+            "server.jinja2", interface="", private_server_key=wg_server_private_key()
+        )
+        with open(SERVER_CONFIG_FILE, "w") as f:
+            f.writelines([rendered])
+
+
 def init_dashboard():
     """
     Create dashboard default configuration.
     """
+
+    create_wg_server_config_if_missing()
 
     # Set Default INI File
     if not os.path.isfile(DASHBOARD_CONF):
