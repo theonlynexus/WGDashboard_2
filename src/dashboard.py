@@ -59,6 +59,8 @@ DB_PATH = os.path.join(configuration_path, "db")
 if not os.path.isdir(DB_PATH):
     os.mkdir(DB_PATH)
 DASHBOARD_CONF = os.path.join(configuration_path, "wg-dashboard.ini")
+SERVER_PRIVATE_KEY = os.path.join(configuration_path, "server", "privatekey-server")
+SERVER_PUBLIC_KEY = os.path.join(configuration_path, "server", "publickey-server")
 
 # Upgrade Required
 UPDATE = None
