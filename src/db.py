@@ -2,65 +2,70 @@ from flask import g
 from flask import current_app as app
 
 
-def get_net_stats(config_name: str) -> list:
+def get_net_stats(interface_name: str) -> list:
     data = g.cur.execute(
-        f"SELECT total_sent, total_receive, cumu_sent, cumu_receive FROM {config_name}"
+        f"SELECT total_sent, total_receive, cumu_sent, cumu_receive FROM {interface_name}"
     )
     return data.fetchall()
 
 
-def get_net_stats_and_peer_status(config_name: str, id: str) -> list:
+def get_net_stats_and_peer_status(interface_name: str, id: str) -> list:
     data = g.cur.execute(
         "SELECT total_receive, total_sent, cumu_receive, cumu_sent, status FROM %s WHERE id='%s'"
-        % (config_name, id)
+        % (interface_name, id)
     )
     return data.fetchone()
 
 
-def get_peers(config_name: str, search: str = None) -> list:
+def get_peers(interface_name: str, search: str = None) -> list:
     """Returns the list of records which name matches the search string, or all if no search is provided"""
 
-    app.logger.debug(f"db.get_peers({config_name}, {search})")
-    sql = f"SELECT * FROM {config_name}"
+    app.logger.debug(f"db.get_peers({interface_name}, {search})")
+    sql = f"SELECT * FROM {interface_name}"
     if search:
         sql += f" WHERE name LIKE '%{search}%'"
     else:
-        sql = "SELECT * FROM " + config_name + " WHERE name LIKE '%" + search + "%'"
+        sql = "SELECT * FROM " + interface_name + " WHERE name LIKE '%" + search + "%'"
     data = g.cur.execute(sql)
     return data.fetchall()
 
 
-def get_peer_by_id(config_name: str, id: str) -> list:
+def get_peer_by_id(interface_name: str, id: str) -> list:
     """Returns the record matching the pass id or None."""
 
-    app.logger.debug(f"db.get_peer_by_id({config_name}, {id})")
-    sql = "SELECT * FROM %s WHERE id='%s'" % (config_name, id)
+    app.logger.debug(f"db.get_peer_by_id({interface_name}, {id})")
+    sql = "SELECT * FROM %s WHERE id='%s'" % (interface_name, id)
     data = g.cur.execute(sql)
     return data.fetchone()
 
 
-def remove_stale_peers(config_name: str, peer_data: str):
+def get_all_peer_ids(interface_name: str):
+    data = g.cur.execute("SELECT id FROM %s" % interface_name)
+    return data.fetchall()
+
+
+def remove_stale_peers(interface_name: str, peer_data: str):
     """Removes entries that which id is present in the db, but not in peer_data"""
 
-    app.logger.debug(f"db.remove_stale_peers({config_name}, peer_data)")
-    db_key = set(map(lambda a: a[0], g.cur.execute("SELECT id FROM %s" % config_name)))
+    app.logger.debug(f"db.remove_stale_peers({interface_name}, peer_data)")
+    db_key = set(map(lambda a: a[0], get_all_peer_ids(interface_name)))
     wg_key = set(map(lambda a: a["PublicKey"], peer_data["Peers"]))
     app.logger.debug(f"db_key: {db_key}")
     app.logger.debug(f"wg_key: {wg_key}")
     for id in db_key - wg_key:
-        delete_peer(config_name, id)
+        delete_peer(interface_name, id)
 
 
-def delete_peer(config_name: str, id: str):
-    app.logger.debug(f"db.delete_peer({config_name}, {id})")
-    sql = "DELETE FROM %s WHERE id = '%s'" % (config_name, id)
+def delete_peer(interface_name: str, id: str):
+    app.logger.debug(f"db.delete_peer({interface_name}, {id})")
+    sql = "DELETE FROM %s WHERE id = '%s'" % (interface_name, id)
     g.cur.execute(sql)
 
 
-def insert_peer(config_name: str, data: dict):
-    app.logger.debug(f"db.insert_peer({config_name}, {data})")
+def insert_peer(interface_name: str, data: dict):
+    app.logger.debug(f"db.insert_peer({interface_name}, {data})")
     sql = f"""
-    INSERT INTO {config_name} 
+    INSERT INTO {interface_name} 
         VALUES (:id, :private_key, :DNS, :endpoint_allowed_ip, :name, :total_receive, :total_sent, 
         :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent, 
         :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
@@ -68,10 +73,33 @@ def insert_peer(config_name: str, data: dict):
     g.cur.execute(sql, data)
 
 
-def update_peer(config_name: str, data: dict):
-    app.logger.debug(f"db.update_peer({config_name}, {data})")
+def create_table_if_missing(name: str):
+    create_table = f"""
+        CREATE TABLE IF NOT EXISTS {name} (
+            id VARCHAR NOT NULL PRIMARY KEY, private_key VARCHAR NULL UNIQUE, DNS VARCHAR NULL, 
+            endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL UNIQUE, total_receive FLOAT NULL, 
+            total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
+            status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
+            cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
+            keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL
+        )
+    """
+    g.cur.execute(create_table)
+
+
+def update_peer(interface_name: str, data: dict):
+    id = data["id"]
+    db_peer = get_peer_by_id(interface_name, id)
+    if db_peer:
+        db_peer = dict(db_peer)
+        db_peer.update(data)
+        _update_peer(interface_name, db_peer)
+
+
+def _update_peer(interface_name: str, data: dict):
+    app.logger.debug(f"db.update_peer({interface_name}, {data})")
     sql = f"""
-    UPDATE {config_name} SET     
+    UPDATE {interface_name} SET     
     private_key=:private_key, DNS=:DNS, endpoint_allowed_ip=:endpoint_allowed_ip, name=:name, 
     total_receive=:total_receive, total_sent=:total_sent,  total_data=:total_data, endpoint=:endpoint, status=:status,
     latest_handshake=:latest_handshake, allowed_ip=:allowed_ip, cumu_receive=:cumu_receive, cumu_sent=:cumu_sent, 

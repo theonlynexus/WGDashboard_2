@@ -19,7 +19,7 @@ import re
 import urllib.parse
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime
 from operator import itemgetter
 
 # PIP installed library
@@ -45,7 +45,12 @@ from util import (
     check_remote_endpoint,
     check_IP_with_range,
     clean_IP_with_range,
+    ensure_subnet,
+    strip_subnet,
 )
+
+
+import db, wg
 
 # Dashboard Version
 DASHBOARD_VERSION = "v3.0.6"
@@ -77,8 +82,6 @@ app.logger.setLevel("DEBUG")
 # Enable QR Code Generator
 QRcode(app)
 
-import db
-
 # TODO: use class and object oriented programming
 
 
@@ -92,7 +95,7 @@ def connect_db():
     return con
 
 
-def get_dashboard_conf():
+def read_dashboard_conf():
     """
     Get dashboard configuration
     @return: configparser.ConfigParser
@@ -102,7 +105,7 @@ def get_dashboard_conf():
     return r_config
 
 
-def set_dashboard_conf(config):
+def write_dashboard_conf(config):
     """
     Write to configuration
     @param config: Input configuration
@@ -111,279 +114,24 @@ def set_dashboard_conf(config):
         config.write(conf_object)
 
 
-# Get all keys from a configuration
-def get_conf_peer_key(config_name):
-    """
-    Get the peers keys of wireguard interface.
-    @param config_name: Name of WG interface
-    @type config_name: str
-    @return: Return list of peers keys or text if configuration not running
-    @rtype: list, str
-    """
-
-    try:
-        peers_keys = subprocess.check_output(
-            f"wg show {config_name} peers", shell=True, stderr=subprocess.STDOUT
-        )
-        peers_keys = peers_keys.decode("UTF-8").split()
-        return peers_keys
-    except subprocess.CalledProcessError:
-        return config_name + " is not running."
-
-
-def get_conf_running_peer_number(config_name):
-    """
-    Get number of running peers on wireguard interface.
-    @param config_name: Name of WG interface
-    @type config_name: str
-    @return: Number of running peers, or test if configuration not running
-    @rtype: int, str
-    """
-
-    running = 0
-    # Get latest handshakes
-    try:
-        data_usage = subprocess.check_output(
-            f"wg show {config_name} latest-handshakes",
-            shell=True,
-            stderr=subprocess.STDOUT,
-        )
-    except subprocess.CalledProcessError:
-        return "stopped"
-    data_usage = data_usage.decode("UTF-8").split()
-    count = 0
-    now = datetime.now()
-    time_delta = timedelta(minutes=2)
-    for _ in range(int(len(data_usage) / 2)):
-        minus = now - datetime.fromtimestamp(int(data_usage[count + 1]))
-        if minus < time_delta:
-            running += 1
-        count += 2
-    return running
-
-
-def is_comment_line(line: str) -> bool:
-    """Returns true if the passed string is a comment"""
-    line = line.strip()
-    return line.startswith("#") or line.startswith(";")
-
-
-def parse_peer_or_interface(lines, i, limit):
-    data = {}
-    while i < limit:
-        line = lines[i].strip()
-        if line.startswith("[Peer]") or line.startswith("[Interface]"):
-            break
-        if not is_comment_line(line):
-            tmp = re.split(r"\s*=\s*", line, 1)
-            if len(tmp) == 2:
-                data[tmp[0]] = tmp[1]
-        i += 1
-    return data, i - 1
-
-
-def read_interface_section_from_conf_file(config_name: str) -> dict:
-    """
-    Get interface settings.
-    @param config_name: Name of WG interface
-    @type config_name: str
-    @return: Dictionary with interface settings
-    @rtype: dict
-    """
-
-    result = read_conf_file(config_name)
-    return result["Interface"]
-
-
-def read_conf_file(config_name: str) -> dict:
-    """
-    Get configurations from file of wireguard interface.
-    @param config_name: Name of WG interface
-    @type config_name: str
-    @return: Dictionary with interface and peers settings
-    @rtype: dict
-    """
-    app.logger.debug(f"read_conf_file({config_name})")
-
-    config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
-    with open(config_file, "r", encoding="utf-8") as file_object:
-        file = list(file_object.readlines())
-    result = {"Interface": {}, "Peers": []}
-    i = 0
-    limit = len(file)
-    while i < limit:
-        line = file[i].strip()
-        if line.startswith("[Peer]"):
-            app.logger.debug("Found a [Peer]")
-            peer, x = parse_peer_or_interface(file, i + 1, limit)
-            result["Peers"].append(peer)
-        elif line.startswith("[Interface]"):
-            app.logger.debug("Found an [Interface]")
-            interface, x = parse_peer_or_interface(file, i + 1, limit)
-            result["Interface"] = interface
-        i += 1
-
-    # Read Configuration File End
-    return result
-
-
-def get_latest_handshake(config_name) -> dict:
-    """
-    Get the latest handshake from all peers of a configuration
-    @param config_name: Configuration name
-    @return: str
-    """
-
-    result = {}
-
-    # Get latest handshakes
-    try:
-        data_usage = subprocess.check_output(
-            f"wg show {config_name} latest-handshakes",
-            shell=True,
-            stderr=subprocess.STDOUT,
-        )
-    except subprocess.CalledProcessError:
-        return result
-    data_usage = data_usage.decode("UTF-8").split()
-    count = 0
-    now = datetime.now()
-    time_delta = timedelta(minutes=2)
-    for _ in range(int(len(data_usage) / 2)):
-        minus = now - datetime.fromtimestamp(int(data_usage[count + 1]))
-        if minus < time_delta:
-            status = "running"
-        else:
-            status = "stopped"
-        if int(data_usage[count + 1]) > 0:
-            peer_id = data_usage[count]
-            result[peer_id] = {
-                "latest_handshake": str(minus).split(".", maxsplit=1)[0],
-                "status": status,
-            }
-        else:
-            peer_id = data_usage[count]
-            result[peer_id] = {"latest_handshake": None, "status": status}
-        count += 2
-
-    return result
-
-
-def get_transfer(config_name) -> dict:
-    """
-    Get transfer from all peers of a configuration
-    @param config_name: Configuration name
-    @return: str
-    """
-
-    result = {}
-    # Get transfer
-    try:
-        data_usage = subprocess.check_output(
-            f"wg show {config_name} transfer", shell=True, stderr=subprocess.STDOUT
-        )
-    except subprocess.CalledProcessError:
-        return result
-    data_usage = data_usage.decode("UTF-8").split("\n")
-    final = []
-    for i in data_usage:
-        final.append(i.split("\t"))
-    data_usage = final
-    for i in range(len(data_usage)):
-        peer_id = data_usage[i][0]
-        result[peer_id] = {}
-        peer_stats = db.get_net_stats_and_peer_status(config_name, peer_id)
-        if peer_stats:
-            total_sent = peer_stats[1]
-            total_receive = peer_stats[0]
-            cur_total_sent = round(int(data_usage[i][2]) / (1024**3), 4)
-            cur_total_receive = round(int(data_usage[i][1]) / (1024**3), 4)
-            if peer_stats["status"] == "running":
-                peer = dict(db.get_peer_by_id(config_name, peer_id))
-                if total_sent <= cur_total_sent and total_receive <= cur_total_receive:
-                    total_sent = cur_total_sent
-                    total_receive = cur_total_receive
-                else:
-                    cumulative_receive = peer_stats[2] + total_receive
-                    cumulative_sent = peer_stats[3] + total_sent
-                    result[peer_id].update(
-                        {
-                            "cumu_receive": round(cumulative_receive, 4),
-                            "cumu_sent": round(cumulative_sent, 4),
-                            "cumu_data": round(cumulative_sent + cumulative_receive, 4),
-                        }
-                    )
-
-                result[peer_id].update(
-                    {
-                        "total_receive": round(total_receive, 4),
-                        "total_sent": round(total_sent, 4),
-                        "total_data": round(total_receive + total_sent, 4),
-                    }
-                )
-
-                total_sent = 0
-                total_receive = 0
-    return result
-
-
-def get_endpoint(config_name) -> dict:
-    """
-    Get endpoint from all peers of a configuration
-    @param config_name: Configuration name
-    @return: str
-    """
-    result = {}
-
-    # Get endpoint
-    try:
-        data_usage = subprocess.check_output(
-            f"wg show {config_name} endpoints", shell=True, stderr=subprocess.STDOUT
-        )
-    except subprocess.CalledProcessError:
-        return result
-    data_usage = data_usage.decode("UTF-8").split()
-    count = 0
-    for _ in range(int(len(data_usage) / 2)):
-        peer_id = data_usage[count]
-        result[peer_id] = {"endpoint": data_usage[count + 1]}
-        count += 2
-    return result
-
-
-def get_allowed_ip(conf_peer_data, config_name) -> dict:
-    """
-    Get allowed ips from all peers of a configuration
-    @param conf_peer_data: Configuration peer data
-    @param config_name: Configuration name
-    @return: None
-    """
-    # Get allowed ip
-    data = {}
-    for i in conf_peer_data["Peers"]:
-        peer_id = i["PublicKey"]
-        data[peer_id] = {"allowed_ips": i.get("AllowedIPs", "(None)")}
-    return data
-
-
 def wg_peer_data_to_db(config_name):
     """
     Look for new peers from WireGuard
     @param config_name: Configuration name
     @return: None
     """
-    conf_peer_data = read_conf_file(config_name)
-    config = get_dashboard_conf()
+    interface_and_peer_data = wg.read_interface_config_file(config_name, WG_CONF_DIR)
+    config = read_dashboard_conf()
     failed_index = []
-    for i in range(len(conf_peer_data["Peers"])):
-        wg_peer = conf_peer_data["Peers"][i]
+    for i in range(len(interface_and_peer_data["Peers"])):
+        wg_peer = interface_and_peer_data["Peers"][i]
         if "PublicKey" in wg_peer.keys():
-            db_peer = db.get_peer_by_id(
-                config_name, conf_peer_data["Peers"][i]["PublicKey"]
+            data = db.get_peer_by_id(
+                config_name, interface_and_peer_data["Peers"][i]["PublicKey"]
             )
-            if not db_peer:
+            if not data:
                 new_data = {
-                    "id": conf_peer_data["Peers"][i]["PublicKey"],
+                    "id": interface_and_peer_data["Peers"][i]["PublicKey"],
                     "private_key": "",
                     "DNS": config.get("Peers", "peer_global_DNS"),
                     "endpoint_allowed_ip": config.get(
@@ -406,8 +154,8 @@ def wg_peer_data_to_db(config_name):
                     "remote_endpoint": config.get("Peers", "remote_endpoint"),
                     "preshared_key": "",
                 }
-                if "PresharedKey" in conf_peer_data["Peers"][i].keys():
-                    new_data["preshared_key"] = conf_peer_data["Peers"][i][
+                if "PresharedKey" in interface_and_peer_data["Peers"][i].keys():
+                    new_data["preshared_key"] = interface_and_peer_data["Peers"][i][
                         "PresharedKey"
                     ]
                 db.insert_peer(config_name, new_data)
@@ -415,28 +163,28 @@ def wg_peer_data_to_db(config_name):
             print("Trying to parse a peer doesn't have public key...")
             failed_index.append(i)
     for i in failed_index:
-        conf_peer_data["Peers"].pop(i)
+        interface_and_peer_data["Peers"].pop(i)
 
-    db.remove_stale_peers(config_name, conf_peer_data)
+    db.remove_stale_peers(config_name, interface_and_peer_data)
 
-    handshakes = get_latest_handshake(config_name)
-    transfers = get_transfer(config_name)
-    endpoints = get_endpoint(config_name)
-    allowed_ips = get_allowed_ip(conf_peer_data, config_name)
+    handshakes = wg.get_interface_peers_latest_handshakes(config_name)
+    transfers = wg.get_interface_peers_net_stats(config_name)
+    endpoints = wg.get_interface_peers_endpoints(config_name)
+    allowed_ips = wg.get_interface_peers_allowed_ips(
+        interface_and_peer_data, config_name
+    )
     keys = set()
     for x in [handshakes, transfers, endpoints, allowed_ips]:
         app.logger.debug(x)
         keys.update(x.keys())
     for id in keys:
-        db_peer = db.get_peer_by_id(config_name, id)
-        if db_peer:
-            db_peer = dict(db_peer)
-            for x in [handshakes, transfers, endpoints, allowed_ips]:
-                try:
-                    db_peer.update(x[id])
-                except KeyError:
-                    pass
-    db.update_peer(config_name, db_peer)
+        data = {"id":id}
+        for x in [handshakes, transfers, endpoints, allowed_ips]:
+            try:
+                data.update(x[id])
+            except KeyError:
+                pass
+        db.update_peer(config_name, data)
 
 
 def update_db_and_get_peers(config_name, search, sort_t):
@@ -471,85 +219,6 @@ def update_db_and_get_peers(config_name, search, sort_t):
     return result
 
 
-def get_conf_pub_key(config_name):
-    """
-    Get public key for configuration.
-    @param config_name: Name of WG interface
-    @type config_name: str
-    @return: Return public key or empty string
-    @rtype: str
-    """
-
-    try:
-        conf = configparser.ConfigParser(strict=False)
-        conf.read(WG_CONF_DIR + "/" + config_name + ".conf")
-        # pri = conf.get("Interface", "PrivateKey")
-        pri = conf["Interface"]["PrivateKey"]
-        pub = subprocess.check_output(
-            f"echo '{pri}' | wg pubkey", shell=True, stderr=subprocess.STDOUT
-        )
-        conf.clear()
-        return pub.decode().strip("\n")
-    except configparser.NoSectionError:
-        return ""
-
-
-def get_conf_listen_port(config_name):
-    """
-    Get listen port number.
-    @param config_name: Name of WG interface
-    @type config_name: str
-    @return: Return number of port or empty string
-    @rtype: str
-    """
-
-    conf = configparser.ConfigParser(strict=False)
-    conf.read(WG_CONF_DIR + "/" + config_name + ".conf")
-    port = ""
-    try:
-        port = conf.get("Interface", "ListenPort")
-    except (configparser.NoSectionError, configparser.NoOptionError):
-        if get_conf_status(config_name) == "running":
-            port = subprocess.check_output(
-                f"wg show {config_name} listen-port",
-                shell=True,
-                stderr=subprocess.STDOUT,
-            )
-            port = port.decode("UTF-8")
-    conf.clear()
-    return port
-
-
-def get_conf_total_data(config_name):
-    """
-    Get configuration's total amount of data
-    @param config_name: Configuration name
-    @return: list
-    """
-    data = db.get_net_stats(config_name)
-    upload_total = 0
-    download_total = 0
-    for i in data:
-        upload_total += i[0]
-        download_total += i[1]
-        upload_total += i[2]
-        download_total += i[3]
-    total = round(upload_total + download_total, 4)
-    upload_total = round(upload_total, 4)
-    download_total = round(download_total, 4)
-    return [total, upload_total, download_total]
-
-
-def get_conf_status(config_name):
-    """
-    Check if the configuration is running or not
-    @param config_name:
-    @return: Return a string indicate the running status
-    """
-    ifconfig = dict(ifcfg.interfaces().items())
-    return "running" if config_name in ifconfig.keys() else "stopped"
-
-
 def get_conf_list():
     """Get all wireguard interfaces with status.
 
@@ -558,24 +227,14 @@ def get_conf_list():
     """
 
     conf = []
-    i = WG_SERVER_CONF_FILE.split("/")[-1]
-    if regex_match("^(.{1,}).(conf)$", i):
-        i = i.replace(".conf", "")
-        create_table = f"""
-            CREATE TABLE IF NOT EXISTS {i} (
-                id VARCHAR NOT NULL PRIMARY KEY, private_key VARCHAR NULL UNIQUE, DNS VARCHAR NULL, 
-                endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL UNIQUE, total_receive FLOAT NULL, 
-                total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL
-            )
-        """
-        g.cur.execute(create_table)
+    if_name = WG_SERVER_CONF_FILE.split("/")[-1]
+    if regex_match("^(.{1,}).(conf)$", if_name):
+        if_name = if_name.split(".")[0]
+        db.create_table_if_missing(if_name)
         temp = {
-            "conf": i,
-            "status": get_conf_status(i),
-            "public_key": get_conf_pub_key(i),
+            "conf": if_name,
+            "status": wg.get_interface_status(if_name),
+            "public_key": wg.get_interface_public_key(if_name, WG_CONF_DIR),
         }
         if temp["status"] == "running":
             temp["checked"] = "checked"
@@ -585,35 +244,6 @@ def get_conf_list():
     if len(conf) > 0:
         conf = sorted(conf, key=itemgetter("conf"))
     return conf
-
-
-def gen_public_key(private_key):
-    """Generate the public key.
-
-    @param private_key: Private key
-    @type private_key: str
-    @return: Return dict with public key or error message
-    @rtype: dict
-    """
-
-    with open("private_key.txt", "w", encoding="utf-8") as file_object:
-        file_object.write(private_key)
-    try:
-        subprocess.check_output(
-            "wg pubkey < private_key.txt > public_key.txt", shell=True
-        )
-        with open("public_key.txt", encoding="utf-8") as file_object:
-            public_key = file_object.readline().strip()
-        os.remove("private_key.txt")
-        os.remove("public_key.txt")
-        return {"status": "success", "msg": "", "data": public_key}
-    except subprocess.CalledProcessError:
-        os.remove("private_key.txt")
-        return {
-            "status": "failed",
-            "msg": "Key is not the correct length or format",
-            "data": "",
-        }
 
 
 def f_check_key_match(private_key, public_key, config_name):
@@ -629,7 +259,7 @@ def f_check_key_match(private_key, public_key, config_name):
     @rtype: dict
     """
 
-    result = gen_public_key(private_key)
+    result = wg.gen_public_key(private_key)
     if result["status"] == "failed":
         return result
     else:
@@ -675,33 +305,15 @@ def check_repeat_allowed_ip(public_key, ip, config_name):
             return {"status": "success"}
 
 
-def strip_subnet(ipv4: str) -> str:
-    ipv4 = ipv4.strip()
-    try:
-        tokens = ipv4.split("/")
-        address = tokens[0]
-    except:
-        address = ipv4
-    return address
-
-
-def ensure_subnet(ipv4: str, default_subnet: str = "24") -> str:
-    ipv4 = ipv4.strip()
-    try:
-        address, subnet = ipv4.split("/")
-    except:
-        address = ipv4
-        subnet = default_subnet
-    return f"{address}/{subnet}"
-
-
 def f_available_ips(config_name):
     """
     Get a list of available IPs
     @param config_name: Configuration Name
     @return: list
     """
-    config_interface = read_interface_section_from_conf_file(config_name)
+    config_interface = wg.read_interface_section_from_config_file(
+        config_name, WG_CONF_DIR
+    )
     if "Address" in config_interface:
         existing = set()
         conf_address = config_interface["Address"]
@@ -750,7 +362,7 @@ def auth_req():
         g.db = connect_db()
         g.cur = g.db.cursor()
     init_dashboard()
-    conf = get_dashboard_conf()
+    conf = read_dashboard_conf()
     req = conf.get("Server", "auth_req")
     session["update"] = UPDATE
     session["dashboard_version"] = DASHBOARD_VERSION
@@ -829,7 +441,7 @@ def auth():
     @return: json object indicating verifying
     """
     data = request.get_json()
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     password = hashlib.sha256(data["password"].encode())
     if (
         password.hexdigest() == config["Account"]["password"]
@@ -870,7 +482,7 @@ def settings():
     """
     message = ""
     status = ""
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     if "message" in session and "message_status" in session:
         message = session["message"]
         status = session["message_status"]
@@ -903,10 +515,10 @@ def update_acct():
         session["message"] = "Username cannot be empty."
         session["message_status"] = "danger"
         return redirect(url_for("settings"))
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     config.set("Account", "username", request.form["username"])
     try:
-        set_dashboard_conf(config)
+        write_dashboard_conf(config)
         config.clear()
         session["message"] = "Username updated successfully!"
         session["message_status"] = "success"
@@ -927,7 +539,7 @@ def update_peer_default_config():
     @return: None
     """
 
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     if (
         len(request.form["peer_endpoint_allowed_ip"]) == 0
         or len(request.form["peer_global_DNS"]) == 0
@@ -986,7 +598,7 @@ def update_peer_default_config():
     config.set("Peers", "peer_endpoint_allowed_ip", ",".join(clean_IP_with_range(ip)))
     config.set("Peers", "peer_global_DNS", dns_addresses)
     try:
-        set_dashboard_conf(config)
+        write_dashboard_conf(config)
         session["message"] = "Peer Default Settings update successfully!"
         session["message_status"] = "success"
         config.clear()
@@ -1006,7 +618,7 @@ def update_pwd():
     @return: Redirect
     """
 
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     if hashlib.sha256(request.form["currentpass"].encode()).hexdigest() == config.get(
         "Account", "password"
     ):
@@ -1020,7 +632,7 @@ def update_pwd():
                 hashlib.sha256(request.form["repnewpass"].encode()).hexdigest(),
             )
             try:
-                set_dashboard_conf(config)
+                write_dashboard_conf(config)
                 session["message"] = "Password updated successfully!"
                 session["message_status"] = "success"
                 config.clear()
@@ -1049,10 +661,10 @@ def update_app_ip_port():
     @return: None
     """
 
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     config.set("Server", "app_ip", request.form["app_ip"])
     config.set("Server", "app_port", request.form["app_port"])
-    set_dashboard_conf(config)
+    write_dashboard_conf(config)
     config.clear()
     subprocess.Popen("bash wgd.sh restart", shell=True)
     return ""
@@ -1066,9 +678,9 @@ def update_wg_conf_path():
     @return: None
     """
 
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     config.set("Server", "wg_conf_path", request.form["wg_conf_path"])
-    set_dashboard_conf(config)
+    write_dashboard_conf(config)
     config.clear()
     session["message"] = "WireGuard Configuration Path updated successfully!"
     session["message_status"] = "success"
@@ -1082,14 +694,14 @@ def update_dashbaord_sort():
     @return: Boolean
     """
 
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     data = request.get_json()
     sort_tag = ["name", "status", "allowed_ip"]
     if data["sort"] in sort_tag:
         config.set("Server", "dashboard_sort", data["sort"])
     else:
         config.set("Server", "dashboard_sort", "status")
-    set_dashboard_conf(config)
+    write_dashboard_conf(config)
     config.clear()
     return "true"
 
@@ -1105,11 +717,11 @@ def update_dashboard_refresh_interval():
 
     preset_interval = ["5000", "10000", "30000", "60000"]
     if request.form["interval"] in preset_interval:
-        config = get_dashboard_conf()
+        config = read_dashboard_conf()
         config.set(
             "Server", "dashboard_refresh_interval", str(request.form["interval"])
         )
-        set_dashboard_conf(config)
+        write_dashboard_conf(config)
         config.clear()
         return "true"
     else:
@@ -1126,10 +738,10 @@ def configuration(config_name):
     @return: Template
     """
 
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     conf_data = {
         "name": config_name,
-        "status": get_conf_status(config_name),
+        "status": wg.get_interface_status(config_name),
         "checked": "",
     }
     if conf_data["status"] == "stopped":
@@ -1169,12 +781,14 @@ def get_conf(config_name):
     @return: TODO
     """
 
-    config_interface = read_interface_section_from_conf_file(config_name)
+    config_interface = wg.read_interface_section_from_config_file(
+        config_name, WG_CONF_DIR
+    )
     search = request.args.get("search")
     if len(search) == 0:
         search = ""
     search = urllib.parse.unquote(search)
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     sort = config.get("Server", "dashboard_sort")
     peer_display_mode = config.get("Peers", "peer_display_mode")
     wg_ip = config.get("Peers", "remote_endpoint")
@@ -1185,11 +799,11 @@ def get_conf(config_name):
     conf_data = {
         "peer_data": update_db_and_get_peers(config_name, search, sort),
         "name": config_name,
-        "status": get_conf_status(config_name),
-        "total_data_usage": get_conf_total_data(config_name),
-        "public_key": get_conf_pub_key(config_name),
-        "listen_port": get_conf_listen_port(config_name),
-        "running_peer": get_conf_running_peer_number(config_name),
+        "status": wg.get_interface_status(config_name),
+        "total_data_usage": wg.get_interface_total_net_stats(config_name),
+        "public_key": wg.get_interface_public_key(config_name, WG_CONF_DIR),
+        "listen_port": wg.get_interface_listen_port(config_name, WG_CONF_DIR),
+        "running_peer": wg.get_interface_running_peer_count(config_name),
         "conf_address": conf_address,
         "wg_ip": wg_ip,
         "sort_tag": sort,
@@ -1216,7 +830,7 @@ def switch(config_name):
     @return: redirects
     """
 
-    status = get_conf_status(config_name)
+    status = wg.get_interface_status(config_name)
     config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
     if status == "running":
         try:
@@ -1250,7 +864,9 @@ def add_peer_bulk(config_name):
     dns_addresses = data["DNS"]
     enable_preshared_key = data["enable_preshared_key"]
     amount = data["amount"]
-    config_interface = read_interface_section_from_conf_file(config_name)
+    config_interface = wg.read_interface_section_from_config_file(
+        config_name, WG_CONF_DIR
+    )
     if "Address" not in config_interface:
         return "Configuration must have an IP address."
     if not amount.isdigit() or int(amount) < 1:
@@ -1307,7 +923,7 @@ def add_peer_bulk(config_name):
         status = subprocess.check_output(
             " ".join(wg_command), shell=True, stderr=subprocess.STDOUT
         )
-        wg_quick_save(config_name)
+        wg.quick_save_interface_config(config_name, WG_CONF_DIR)
         wg_peer_data_to_db(config_name)
         if enable_preshared_key:
             for i in keys:
@@ -1334,7 +950,7 @@ def add_peer(config_name):
     dns_addresses = data["DNS"]
     enable_preshared_key = data["enable_preshared_key"]
     preshared_key = data["preshared_key"]
-    keys = get_conf_peer_key(config_name)
+    keys = wg.get_interface_peer_public_keys(config_name)
     if (
         len(public_key) == 0
         or len(dns_addresses) == 0
@@ -1383,7 +999,7 @@ def add_peer(config_name):
                 stderr=subprocess.STDOUT,
             )
 
-        wg_quick_save(config_name)
+        wg.quick_save_interface_config(config_name, WG_CONF_DIR)
         wg_peer_data_to_db(config_name)
         peer = db.get_peer_by_id(config_name, public_key)
         if peer:
@@ -1403,13 +1019,6 @@ def add_peer(config_name):
         return exc.output.strip()
 
 
-def wg_quick_save(config_name):
-    config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
-    status = subprocess.check_output(
-        "wg-quick save " + config_file, shell=True, stderr=subprocess.STDOUT
-    )
-
-
 @app.route("/remove_peer/<config_name>", methods=["POST"])
 def remove_peer(config_name):
     """
@@ -1420,11 +1029,11 @@ def remove_peer(config_name):
     @rtype: str
     """
 
-    if get_conf_status(config_name) == "stopped":
+    if wg.get_interface_status(config_name) == "stopped":
         return "Your need to turn on " + config_name + " first."
     data = request.get_json()
     delete_keys = data["peer_ids"]
-    keys = get_conf_peer_key(config_name)
+    keys = wg.get_interface_peer_public_keys(config_name)
     if not isinstance(keys, list):
         return config_name + " is not running."
     else:
@@ -1441,7 +1050,7 @@ def remove_peer(config_name):
             remove_wg = subprocess.check_output(
                 " ".join(wg_command), shell=True, stderr=subprocess.STDOUT
             )
-            wg_quick_save(config_name)
+            wg.quick_save_interface_config(config_name, WG_CONF_DIR)
             g.cur.executescript(" ".join(sql_command))
             g.db.commit()
         except subprocess.CalledProcessError as exc:
@@ -1512,26 +1121,22 @@ def save_peer_setting(config_name):
                 shell=True,
                 stderr=subprocess.STDOUT,
             )
-            wg_quick_save(config_name)
+            wg.quick_save_interface_config(config_name, WG_CONF_DIR)
             if change_ip.decode("UTF-8") != "":
                 return jsonify({"status": "failed", "msg": change_ip.decode("UTF-8")})
-            sql = (
-                "UPDATE "
-                + config_name
-                + " SET name = ?, private_key = ?, DNS = ?, endpoint_allowed_ip = ?, mtu = ?, keepalive = ?, preshared_key = ? WHERE id = ?"
-            )
-            g.cur.execute(
-                sql,
-                (
-                    name,
-                    private_key,
-                    dns_addresses,
-                    endpoint_allowed_ip,
-                    data["MTU"],
-                    data["keep_alive"],
-                    preshared_key,
-                    id,
-                ),
+
+            db.update_peer(
+                config_name,
+                {
+                    "name": name,
+                    "private_key": private_key,
+                    "DNS": dns_addresses,
+                    "endpoint_allowed_ip": endpoint_allowed_ip,
+                    "mtu": data["MTU"],
+                    "keepalive": data["keep_alive"],
+                    "preshared_key": preshared_key,
+                    "id": id,
+                },
             )
             return jsonify({"status": "success", "msg": ""})
         except subprocess.CalledProcessError as exc:
@@ -1610,12 +1215,12 @@ def generate_qrcode(config_name):
         + " WHERE id = ?",
         (peer_id,),
     ).fetchall()
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     if len(get_peer) == 1:
         peer = get_peer[0]
         if peer[0] != "":
-            public_key = get_conf_pub_key(config_name)
-            listen_port = get_conf_listen_port(config_name)
+            public_key = wg.get_interface_public_key(config_name, WG_CONF_DIR)
+            listen_port = wg.get_interface_listen_port(config_name, WG_CONF_DIR)
             endpoint = config.get("Peers", "remote_endpoint") + ":" + listen_port
             private_key = peer[0]
             allowed_ip = peer[1]
@@ -1662,10 +1267,10 @@ def download_all(config_name):
         + config_name
         + " WHERE private_key != ''"
     ).fetchall()
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     data = []
-    public_key = get_conf_pub_key(config_name)
-    listen_port = get_conf_listen_port(config_name)
+    public_key = wg.get_interface_public_key(config_name, WG_CONF_DIR)
+    listen_port = wg.get_interface_listen_port(config_name, WG_CONF_DIR)
     endpoint = config.get("Peers", "remote_endpoint") + ":" + listen_port
     for peer in get_peer:
         private_key = peer[0]
@@ -1762,12 +1367,12 @@ def download(config_name):
         + " WHERE id = ?",
         (peer_id,),
     ).fetchall()
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     if len(get_peer) == 1:
         peer = get_peer[0]
         if peer[0] != "":
-            public_key = get_conf_pub_key(config_name)
-            listen_port = get_conf_listen_port(config_name)
+            public_key = wg.get_interface_public_key(config_name, WG_CONF_DIR)
+            listen_port = wg.get_interface_listen_port(config_name, WG_CONF_DIR)
             endpoint = config.get("Peers", "remote_endpoint") + ":" + listen_port
             private_key = peer[0]
             allowed_ip = peer[1]
@@ -1863,9 +1468,9 @@ def switch_display_mode(mode):
     """
 
     if mode in ["list", "grid"]:
-        config = get_dashboard_conf()
+        config = read_dashboard_conf()
         config.set("Peers", "peer_display_mode", mode)
-        set_dashboard_conf(config)
+        write_dashboard_conf(config)
         config.clear()
         return "true"
     return "false"
@@ -2016,7 +1621,7 @@ def create_wg_server_config_if_missing():
     Creates /config/wg0.conf if missing.
     """
     create_wg_server_keys_if_missing()
-    subnet = get_dashboard_conf()["Server"]["internal_subnet"]
+    subnet = read_dashboard_conf()["Server"]["internal_subnet"]
     interface = get_base_net(subnet)
     if not os.path.isfile(SERVER_CONFIG_FILE):
         rendered = render_template(
@@ -2051,7 +1656,7 @@ def init_dashboard():
     # Set Default INI File
     if not os.path.isfile(DASHBOARD_CONF_FILE):
         open(DASHBOARD_CONF_FILE, "w+").close()
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     # Default dashboard account setting
     if "Account" not in config:
         config["Account"] = {}
@@ -2100,7 +1705,7 @@ def init_dashboard():
     if "peer_keep_alive" not in config["Peers"]:
         config["Peers"]["peer_keep_alive"] = "21"
 
-    set_dashboard_conf(config)
+    write_dashboard_conf(config)
     create_wg_server_config_if_missing()
     config.clear()
 
@@ -2112,7 +1717,7 @@ def check_update():
     @return: Retunt text with result
     @rtype: str
     """
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     try:
         data = urllib.request.urlopen(
             "https://api.github.com/repos/donaldzou/WGDashboard/releases"
@@ -2141,7 +1746,7 @@ def run_dashboard():
     init_dashboard()
     global UPDATE
     UPDATE = check_update()
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     # global app_ip
     app_ip = config.get("Server", "app_ip")
     # global app_port
@@ -2157,7 +1762,7 @@ Get host and port for web-server
 
 def get_host_bind():
     init_dashboard()
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     app_ip = config.get("Server", "app_ip")
     app_port = config.get("Server", "app_port")
     return app_ip, app_port
@@ -2166,7 +1771,7 @@ def get_host_bind():
 if __name__ == "__main__":
     init_dashboard()
     UPDATE = check_update()
-    config = get_dashboard_conf()
+    config = read_dashboard_conf()
     # global app_ip
     app_ip = config.get("Server", "app_ip")
     # global app_port
