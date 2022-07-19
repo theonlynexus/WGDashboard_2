@@ -47,10 +47,11 @@ RUN \
 
 
 COPY src/requirements.txt ./
-
-COPY src/ ./
 RUN pip install -r requirements.txt 
 
+FROM python
+
+COPY src/ ./
 
 EXPOSE 51820/udp
 EXPOSE 80

@@ -52,11 +52,12 @@ DASHBOARD_VERSION = "v3.0.6"
 
 # Dashboard Config Name
 configuration_path = "/config"
-WG_CONF = os.path.join(configuration_path, "wg0.conf")
+WG_CONF_DIR = configuration_path
+WG_SERVER_CONF_FILE = os.path.join(configuration_path, "wg0.conf")
 DB_PATH = os.path.join(configuration_path, "db")
 if not os.path.isdir(DB_PATH):
     os.mkdir(DB_PATH)
-DASHBOARD_CONF = os.path.join(configuration_path, "wg-dashboard.ini")
+DASHBOARD_CONF_FILE = os.path.join(configuration_path, "wg-dashboard.ini")
 SERVER_PRIVATE_KEY_FILE = os.path.join(
     configuration_path, "server", "privatekey-server"
 )
@@ -71,9 +72,12 @@ app = Flask("WGDashboard")
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 5206928
 app.secret_key = secrets.token_urlsafe(16)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.logger.setLevel("DEBUG")
 
 # Enable QR Code Generator
 QRcode(app)
+
+import db
 
 # TODO: use class and object oriented programming
 
@@ -83,7 +87,9 @@ def connect_db():
     Connect to the database
     @return: sqlite3.Connection
     """
-    return sqlite3.connect(os.path.join(configuration_path, "db", "wgdashboard.db"))
+    con = sqlite3.connect(os.path.join(configuration_path, "db", "wgdashboard.db"))
+    con.row_factory = sqlite3.Row
+    return con
 
 
 def get_dashboard_conf():
@@ -92,7 +98,7 @@ def get_dashboard_conf():
     @return: configparser.ConfigParser
     """
     r_config = configparser.ConfigParser(strict=False)
-    r_config.read(DASHBOARD_CONF)
+    r_config.read(DASHBOARD_CONF_FILE)
     return r_config
 
 
@@ -101,7 +107,7 @@ def set_dashboard_conf(config):
     Write to configuration
     @param config: Input configuration
     """
-    with open(DASHBOARD_CONF, "w", encoding="utf-8") as conf_object:
+    with open(DASHBOARD_CONF_FILE, "w", encoding="utf-8") as conf_object:
         config.write(conf_object)
 
 
@@ -156,7 +162,7 @@ def get_conf_running_peer_number(config_name):
     return running
 
 
-def read_conf_file_interface():
+def read_interface_section_from_conf_file(config_name):
     """
     Get interface settings.
     @param config_name: Name of WG interface
@@ -165,21 +171,41 @@ def read_conf_file_interface():
     @rtype: dict
     """
 
-    conf_location = WG_CONF
-    with open(conf_location, "r", encoding="utf-8") as file_object:
-        file = file_object.read().split("\n")
-        data = {}
-        for i in file:
-            if not regex_match("#(.*)", i):
-                if len(i) > 0:
-                    if i != "[Interface]":
-                        tmp = re.split(r"\s*=\s*", i, 1)
-                        if len(tmp) == 2:
-                            data[tmp[0]] = tmp[1]
+    config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
+    with open(config_file, "r", encoding="utf-8") as file_object:
+        file = list(file_object.readlines())
+    data = {}
+    for i in file:
+        if not regex_match("#(.*)", i):
+            if len(i) > 0:
+                if i != "[Interface]":
+                    tmp = re.split(r"\s*=\s*", i, 1)
+                    if len(tmp) == 2:
+                        data[tmp[0]] = tmp[1]
     return data
 
 
-def read_conf_file(config_name):
+def is_comment_line(line: str) -> bool:
+    """Returns true if the passed string is a comment"""
+    line = line.strip()
+    return line.startswith("#") or line.startswith(";")
+
+
+def parse_peer_or_interface(lines, i, limit):
+    data = {}
+    while i < limit:
+        line = lines[i].strip()
+        if line.startswith("[Peer]") or line.startswith("[Interface]"):
+            break
+        if not is_comment_line(line):
+            tmp = re.split(r"\s*=\s*", line, 1)
+            if len(tmp) == 2:
+                data[tmp[0]] = tmp[1]
+        i += 1
+    return data, i - 1
+
+
+def read_conf_file(config_name: str):
     """
     Get configurations from file of wireguard interface.
     @param config_name: Name of WG interface
@@ -187,37 +213,26 @@ def read_conf_file(config_name):
     @return: Dictionary with interface and peers settings
     @rtype: dict
     """
+    app.logger.debug(f"read_conf_file({config_name})")
 
-    conf_location = WG_CONF + "/" + config_name + ".conf"
-    f = open(conf_location, "r")
-    file = f.read().split("\n")
+    config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
+    with open(config_file, "r", encoding="utf-8") as file_object:
+        file = list(file_object.readlines())
     conf_peer_data = {"Interface": {}, "Peers": []}
-    peers_start = 0
-    for i in range(len(file)):
-        if not regex_match("#(.*)", file[i]) and regex_match(";(.*)", file[i]):
-            if file[i] == "[Peer]":
-                peers_start = i
-                break
-            else:
-                if len(file[i]) > 0:
-                    if file[i] != "[Interface]":
-                        tmp = re.split(r"\s*=\s*", file[i], 1)
-                        if len(tmp) == 2:
-                            conf_peer_data["Interface"][tmp[0]] = tmp[1]
-    conf_peers = file[peers_start:]
-    peer = -1
-    for i in conf_peers:
-        if not regex_match("#(.*)", i) and not regex_match(";(.*)", i):
-            if i == "[Peer]":
-                peer += 1
-                conf_peer_data["Peers"].append({})
-            elif peer > -1:
-                if len(i) > 0:
-                    tmp = re.split(r"\s*=\s*", i, 1)
-                    if len(tmp) == 2:
-                        conf_peer_data["Peers"][peer][tmp[0]] = tmp[1]
+    i = 0
+    limit = len(file)
+    while i < limit:
+        line = file[i].strip()
+        if line.startswith("[Peer]"):
+            app.logger.debug("Found a [Peer]")
+            peer, x = parse_peer_or_interface(file, i + 1, limit)
+            conf_peer_data["Peers"].append(peer)
+        elif line.startswith("[Interface]"):
+            app.logger.debug("Found an [Interface]")
+            interface, x = parse_peer_or_interface(file, i + 1, limit)
+            conf_peer_data["Interface"] = interface
+        i += 1
 
-    f.close()
     # Read Configuration File End
     return conf_peer_data
 
@@ -367,7 +382,7 @@ def get_allowed_ip(conf_peer_data, config_name):
         )
 
 
-def get_all_peers_data(config_name):
+def wg_peer_data_to_db(config_name):
     """
     Look for new peers from WireGuard
     @param config_name: Configuration name
@@ -378,10 +393,9 @@ def get_all_peers_data(config_name):
     failed_index = []
     for i in range(len(conf_peer_data["Peers"])):
         if "PublicKey" in conf_peer_data["Peers"][i].keys():
-            result = g.cur.execute(
-                "SELECT * FROM %s WHERE id='%s'"
-                % (config_name, conf_peer_data["Peers"][i]["PublicKey"])
-            ).fetchall()
+            result = db.get_peer_by_id(
+                config_name, conf_peer_data["Peers"][i]["PublicKey"]
+            )
             if len(result) == 0:
                 new_data = {
                     "id": conf_peer_data["Peers"][i]["PublicKey"],
@@ -411,24 +425,15 @@ def get_all_peers_data(config_name):
                     new_data["preshared_key"] = conf_peer_data["Peers"][i][
                         "PresharedKey"
                     ]
-                sql = f"""
-                INSERT INTO {config_name} 
-                    VALUES (:id, :private_key, :DNS, :endpoint_allowed_ip, :name, :total_receive, :total_sent, 
-                    :total_data, :endpoint, :status, :latest_handshake, :allowed_ip, :cumu_receive, :cumu_sent, 
-                    :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
-                """
-                g.cur.execute(sql, new_data)
+                db.insert_peer(config_name, new_data)
         else:
             print("Trying to parse a peer doesn't have public key...")
             failed_index.append(i)
     for i in failed_index:
         conf_peer_data["Peers"].pop(i)
-    # Remove peers no longer exist in WireGuard configuration file
-    db_key = list(map(lambda a: a[0], g.cur.execute("SELECT id FROM %s" % config_name)))
-    wg_key = list(map(lambda a: a["PublicKey"], conf_peer_data["Peers"]))
-    for i in db_key:
-        if i not in wg_key:
-            g.cur.execute("DELETE FROM %s WHERE id = '%s'" % (config_name, i))
+
+    db.remove_stale_peers(config_name, conf_peer_data)
+
     get_latest_handshake(config_name)
     get_transfer(config_name)
     get_endpoint(config_name)
@@ -449,18 +454,11 @@ def get_peers(config_name, search, sort_t):
     tic = time.perf_counter()
     col = g.cur.execute("PRAGMA table_info(" + config_name + ")").fetchall()
     col = [a[1] for a in col]
-    get_all_peers_data(config_name)
-    if len(search) == 0:
-        data = g.cur.execute("SELECT * FROM " + config_name).fetchall()
-        result = [
-            {col[i]: data[k][i] for i in range(len(col))} for k in range(len(data))
-        ]
-    else:
-        sql = "SELECT * FROM " + config_name + " WHERE name LIKE '%" + search + "%'"
-        data = g.cur.execute(sql).fetchall()
-        result = [
-            {col[i]: data[k][i] for i in range(len(col))} for k in range(len(data))
-        ]
+    wg_peer_data_to_db(config_name)
+
+    data = db.get_peers(config_name, search)
+    result = [{col[i]: data[k][i] for i in range(len(col))} for k in range(len(data))]
+
     if sort_t == "allowed_ip":
         result = sorted(
             result,
@@ -488,8 +486,9 @@ def get_conf_pub_key(config_name):
 
     try:
         conf = configparser.ConfigParser(strict=False)
-        conf.read(WG_CONF + "/" + config_name + ".conf")
-        pri = conf.get("Interface", "PrivateKey")
+        conf.read(WG_CONF_DIR + "/" + config_name + ".conf")
+        # pri = conf.get("Interface", "PrivateKey")
+        pri = conf["Interface"]["PrivateKey"]
         pub = subprocess.check_output(
             f"echo '{pri}' | wg pubkey", shell=True, stderr=subprocess.STDOUT
         )
@@ -509,7 +508,7 @@ def get_conf_listen_port(config_name):
     """
 
     conf = configparser.ConfigParser(strict=False)
-    conf.read(WG_CONF + "/" + config_name + ".conf")
+    conf.read(WG_CONF_DIR + "/" + config_name + ".conf")
     port = ""
     try:
         port = conf.get("Interface", "ListenPort")
@@ -565,31 +564,30 @@ def get_conf_list():
     """
 
     conf = []
-    for i in os.listdir(WG_CONF):
-        if regex_match("^(.{1,}).(conf)$", i):
-            i = i.replace(".conf", "")
-            create_table = f"""
-                CREATE TABLE IF NOT EXISTS {i} (
-                    id VARCHAR NOT NULL, private_key VARCHAR NULL, DNS VARCHAR NULL, 
-                    endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-                    total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-                    status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
-                    cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-                    keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL, 
-                    PRIMARY KEY (id)
-                )
-            """
-            g.cur.execute(create_table)
-            temp = {
-                "conf": i,
-                "status": get_conf_status(i),
-                "public_key": get_conf_pub_key(i),
-            }
-            if temp["status"] == "running":
-                temp["checked"] = "checked"
-            else:
-                temp["checked"] = ""
-            conf.append(temp)
+    i = WG_SERVER_CONF_FILE.split("/")[-1]
+    if regex_match("^(.{1,}).(conf)$", i):
+        i = i.replace(".conf", "")
+        create_table = f"""
+            CREATE TABLE IF NOT EXISTS {i} (
+                id VARCHAR NOT NULL PRIMARY KEY, private_key VARCHAR NULL UNIQUE, DNS VARCHAR NULL, 
+                endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL UNIQUE, total_receive FLOAT NULL, 
+                total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
+                status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ip VARCHAR NULL, 
+                cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
+                keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL
+            )
+        """
+        g.cur.execute(create_table)
+        temp = {
+            "conf": i,
+            "status": get_conf_status(i),
+            "public_key": get_conf_pub_key(i),
+        }
+        if temp["status"] == "running":
+            temp["checked"] = "checked"
+        else:
+            temp["checked"] = ""
+        conf.append(temp)
     if len(conf) > 0:
         conf = sorted(conf, key=itemgetter("conf"))
     return conf
@@ -683,33 +681,49 @@ def check_repeat_allowed_ip(public_key, ip, config_name):
             return {"status": "success"}
 
 
+def strip_subnet(ipv4: str) -> str:
+    ipv4 = ipv4.strip()
+    try:
+        tokens = ipv4.split("/")
+        address = tokens[0]
+    except:
+        address = ipv4
+    return address
+
+
+def ensure_subnet(ipv4: str, default_subnet: str = "24") -> str:
+    ipv4 = ipv4.strip()
+    try:
+        address, subnet = ipv4.split("/")
+    except:
+        address = ipv4
+        subnet = default_subnet
+    return f"{address}/{subnet}"
+
+
 def f_available_ips(config_name):
     """
     Get a list of available IPs
     @param config_name: Configuration Name
     @return: list
     """
-    config_interface = read_conf_file_interface(config_name)
+    config_interface = read_interface_section_from_conf_file(config_name)
     if "Address" in config_interface:
-        existed = []
+        existing = set()
         conf_address = config_interface["Address"]
-        address = conf_address.split(",")
+        address = list(map(lambda x: x.strip(), conf_address.split(",")))
         for i in address:
-            add, sub = i.split("/")
-            existed.append(ipaddress.ip_address(add))
+            add = strip_subnet(i)
+            existing.add(ipaddress.ip_address(add))
         peers = g.cur.execute("SELECT allowed_ip FROM " + config_name).fetchall()
         for i in peers:
             add = i[0].split(",")
             for k in add:
-                a, s = k.split("/")
-                existed.append(ipaddress.ip_address(a.strip()))
-        available = list(ipaddress.ip_network(address[0], False).hosts())
-        for i in existed:
-            try:
-                available.remove(i)
-            except ValueError:
-                pass
-        available = [str(i) for i in available]
+                a = strip_subnet(k)
+                existing.add(ipaddress.ip_address(a.strip()))
+        available = set(ipaddress.ip_network(ensure_subnet(address[0]), False).hosts())
+        available -= existing
+        available = list(map(lambda x: str(x), sorted(available)))
         return available
     else:
         return []
@@ -1159,7 +1173,7 @@ def get_conf(config_name):
     @return: TODO
     """
 
-    config_interface = read_conf_file_interface(config_name)
+    config_interface = read_interface_section_from_conf_file(config_name)
     search = request.args.get("search")
     if len(search) == 0:
         search = ""
@@ -1207,10 +1221,11 @@ def switch(config_name):
     """
 
     status = get_conf_status(config_name)
+    config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
     if status == "running":
         try:
             check = subprocess.check_output(
-                "wg-quick down " + config_name, shell=True, stderr=subprocess.STDOUT
+                "wg-quick down " + config_file, shell=True, stderr=subprocess.STDOUT
             )
         except subprocess.CalledProcessError as exc:
             session["switch_msg"] = exc.output.strip().decode("utf-8")
@@ -1218,7 +1233,7 @@ def switch(config_name):
     elif status == "stopped":
         try:
             subprocess.check_output(
-                "wg-quick up " + config_name, shell=True, stderr=subprocess.STDOUT
+                "wg-quick up " + config_file, shell=True, stderr=subprocess.STDOUT
             )
         except subprocess.CalledProcessError as exc:
             session["switch_msg"] = exc.output.strip().decode("utf-8")
@@ -1239,7 +1254,7 @@ def add_peer_bulk(config_name):
     dns_addresses = data["DNS"]
     enable_preshared_key = data["enable_preshared_key"]
     amount = data["amount"]
-    config_interface = read_conf_file_interface(config_name)
+    config_interface = read_interface_section_from_conf_file(config_name)
     if "Address" not in config_interface:
         return "Configuration must have an IP address."
     if not amount.isdigit() or int(amount) < 1:
@@ -1296,10 +1311,8 @@ def add_peer_bulk(config_name):
         status = subprocess.check_output(
             " ".join(wg_command), shell=True, stderr=subprocess.STDOUT
         )
-        status = subprocess.check_output(
-            "wg-quick save " + config_name, shell=True, stderr=subprocess.STDOUT
-        )
-        get_all_peers_data(config_name)
+        wg_quick_save(config_name)
+        wg_peer_data_to_db(config_name)
         if enable_preshared_key:
             for i in keys:
                 os.remove(i["psk_file"])
@@ -1373,28 +1386,30 @@ def add_peer(config_name):
                 shell=True,
                 stderr=subprocess.STDOUT,
             )
-        status = subprocess.check_output(
-            "wg-quick save " + config_name, shell=True, stderr=subprocess.STDOUT
+
+        wg_quick_save(config_name)
+        wg_peer_data_to_db(config_name)
+        peer = dict(db.get_peer_by_id(config_name, public_key)[0])
+        peer.update(
+            {
+                "id": public_key,
+                "name": data["name"],
+                "private_key": data["private_key"],
+                "DNS": data["DNS"],
+                "endpoint_allowed_ip": endpoint_allowed_ip,
+            }
         )
-        get_all_peers_data(config_name)
-        sql = (
-            "UPDATE "
-            + config_name
-            + " SET name = ?, private_key = ?, DNS = ?, endpoint_allowed_ip = ? WHERE id = ?"
-        )
-        g.cur.execute(
-            sql,
-            (
-                data["name"],
-                data["private_key"],
-                data["DNS"],
-                endpoint_allowed_ip,
-                public_key,
-            ),
-        )
+        db.update_peer(config_name, peer)
         return "true"
     except subprocess.CalledProcessError as exc:
         return exc.output.strip()
+
+
+def wg_quick_save(config_name):
+    config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
+    status = subprocess.check_output(
+        "wg-quick save " + config_file, shell=True, stderr=subprocess.STDOUT
+    )
 
 
 @app.route("/remove_peer/<config_name>", methods=["POST"])
@@ -1420,9 +1435,7 @@ def remove_peer(config_name):
         for delete_key in delete_keys:
             if delete_key not in keys:
                 return "This key does not exist"
-            sql_command.append(
-                "DELETE FROM " + config_name + " WHERE id = '" + delete_key + "';"
-            )
+            db.delete_peer(config_name, delete_key)
             wg_command.append("peer")
             wg_command.append(delete_key)
             wg_command.append("remove")
@@ -1430,9 +1443,7 @@ def remove_peer(config_name):
             remove_wg = subprocess.check_output(
                 " ".join(wg_command), shell=True, stderr=subprocess.STDOUT
             )
-            save_wg = subprocess.check_output(
-                f"wg-quick save {config_name}", shell=True, stderr=subprocess.STDOUT
-            )
+            wg_quick_save(config_name)
             g.cur.executescript(" ".join(sql_command))
             g.db.commit()
         except subprocess.CalledProcessError as exc:
@@ -1503,9 +1514,7 @@ def save_peer_setting(config_name):
                 shell=True,
                 stderr=subprocess.STDOUT,
             )
-            subprocess.check_output(
-                f"wg-quick save {config_name}", shell=True, stderr=subprocess.STDOUT
-            )
+            wg_quick_save(config_name)
             if change_ip.decode("UTF-8") != "":
                 return jsonify({"status": "failed", "msg": change_ip.decode("UTF-8")})
             sql = (
@@ -1976,6 +1985,9 @@ def create_wg_server_keys_if_missing():
     """
     Creates /config/server/{private|public}key-server files if the private key is missing.
     """
+    from pathlib import Path
+
+    Path("/config/server").mkdir(parents=True, exist_ok=True)
     if not os.path.isfile(SERVER_PRIVATE_KEY_FILE):
         output = subprocess.check_output(
             f"wg genkey | tee /config/server/privatekey-server | wg pubkey > /config/server/publickey-server",
@@ -1988,7 +2000,7 @@ def wg_server_private_key() -> str:
     Returns the contents of config/server/privatekey-server.
     """
     with open(SERVER_PRIVATE_KEY_FILE, "r") as f:
-        key = f.readline
+        key = f.readline()
     return key
 
 
@@ -1997,7 +2009,7 @@ def wg_server_public_key() -> str:
     Returns the contents of config/server/publickey-server.
     """
     with open(SERVER_PUBLIC_KEY_FILE, "r") as f:
-        key = f.readline
+        key = f.readline()
     return key
 
 
@@ -2006,12 +2018,31 @@ def create_wg_server_config_if_missing():
     Creates /config/wg0.conf if missing.
     """
     create_wg_server_keys_if_missing()
+    subnet = get_dashboard_conf()["Server"]["internal_subnet"]
+    interface = get_base_net(subnet)
     if not os.path.isfile(SERVER_CONFIG_FILE):
         rendered = render_template(
-            "server.jinja2", interface="", private_server_key=wg_server_private_key()
+            "config_file_templates/server.jinja2",
+            interface=interface,
+            private_server_key=wg_server_private_key(),
         )
         with open(SERVER_CONFIG_FILE, "w") as f:
             f.writelines([rendered])
+
+
+def get_base_net(ipv4: str | int) -> str:
+    """
+    Returns the first three octects of an IPv4 address
+    """
+    try:
+        ipaddress.ip_address(ipv4)
+    except:
+        raise ValueError(
+            f"Passed value of {ipv4} doesn't seem to be a valid IP address."
+        )
+
+    tokens = ipv4.split(".")
+    return ".".join(tokens[0:3])
 
 
 def init_dashboard():
@@ -2019,11 +2050,9 @@ def init_dashboard():
     Create dashboard default configuration.
     """
 
-    create_wg_server_config_if_missing()
-
     # Set Default INI File
-    if not os.path.isfile(DASHBOARD_CONF):
-        open(DASHBOARD_CONF, "w+").close()
+    if not os.path.isfile(DASHBOARD_CONF_FILE):
+        open(DASHBOARD_CONF_FILE, "w+").close()
     config = get_dashboard_conf()
     # Default dashboard account setting
     if "Account" not in config:
@@ -2050,11 +2079,18 @@ def init_dashboard():
         config["Server"]["dashboard_refresh_interval"] = "60000"
     if "dashboard_sort" not in config["Server"]:
         config["Server"]["dashboard_sort"] = "status"
+    if "internal_subnet" not in config["Server"]:
+        # This takes inspiration from https://github.com/linuxserver/docker-wireguard/
+        config["Server"]["internal_subnet"] = "10.13.13.0"
     # Default dashboard peers setting
     if "Peers" not in config:
         config["Peers"] = {}
     if "peer_global_DNS" not in config["Peers"]:
-        config["Peers"]["peer_global_DNS"] = "1.1.1.1"
+        # This takes inspiration from https://github.com/linuxserver/docker-wireguard/
+        # If not set, set DNS to x.y.z.1 to use wireguard docker host's DNS
+        config["Peers"][
+            "peer_global_DNS"
+        ] = f"{get_base_net(config['Server']['internal_subnet'])}.1"
     if "peer_endpoint_allowed_ip" not in config["Peers"]:
         config["Peers"]["peer_endpoint_allowed_ip"] = "0.0.0.0/0"
     if "peer_display_mode" not in config["Peers"]:
@@ -2065,7 +2101,9 @@ def init_dashboard():
         config["Peers"]["peer_MTU"] = "1420"
     if "peer_keep_alive" not in config["Peers"]:
         config["Peers"]["peer_keep_alive"] = "21"
+
     set_dashboard_conf(config)
+    create_wg_server_config_if_missing()
     config.clear()
 
 
@@ -2110,8 +2148,6 @@ def run_dashboard():
     app_ip = config.get("Server", "app_ip")
     # global app_port
     app_port = config.get("Server", "app_port")
-    global WG_CONF
-    WG_CONF = config.get("Server", "wg_conf_path")
     config.clear()
     return app
 
@@ -2137,6 +2173,5 @@ if __name__ == "__main__":
     app_ip = config.get("Server", "app_ip")
     # global app_port
     app_port = config.get("Server", "app_port")
-    WG_CONF = config.get("Server", "wg_conf_path")
     config.clear()
     app.run(host=app_ip, debug=False, port=app_port)
