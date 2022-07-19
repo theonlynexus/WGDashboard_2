@@ -162,29 +162,6 @@ def get_conf_running_peer_number(config_name):
     return running
 
 
-def read_interface_section_from_conf_file(config_name):
-    """
-    Get interface settings.
-    @param config_name: Name of WG interface
-    @type config_name: str
-    @return: Dictionary with interface settings
-    @rtype: dict
-    """
-
-    config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
-    with open(config_file, "r", encoding="utf-8") as file_object:
-        file = list(file_object.readlines())
-    data = {}
-    for i in file:
-        if not regex_match("#(.*)", i):
-            if len(i) > 0:
-                if i != "[Interface]":
-                    tmp = re.split(r"\s*=\s*", i, 1)
-                    if len(tmp) == 2:
-                        data[tmp[0]] = tmp[1]
-    return data
-
-
 def is_comment_line(line: str) -> bool:
     """Returns true if the passed string is a comment"""
     line = line.strip()
@@ -205,7 +182,20 @@ def parse_peer_or_interface(lines, i, limit):
     return data, i - 1
 
 
-def read_conf_file(config_name: str):
+def read_interface_section_from_conf_file(config_name: str) -> dict:
+    """
+    Get interface settings.
+    @param config_name: Name of WG interface
+    @type config_name: str
+    @return: Dictionary with interface settings
+    @rtype: dict
+    """
+
+    result = read_conf_file(config_name)
+    return result["Interface"]
+
+
+def read_conf_file(config_name: str) -> dict:
     """
     Get configurations from file of wireguard interface.
     @param config_name: Name of WG interface
@@ -218,7 +208,7 @@ def read_conf_file(config_name: str):
     config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
     with open(config_file, "r", encoding="utf-8") as file_object:
         file = list(file_object.readlines())
-    conf_peer_data = {"Interface": {}, "Peers": []}
+    result = {"Interface": {}, "Peers": []}
     i = 0
     limit = len(file)
     while i < limit:
@@ -226,23 +216,25 @@ def read_conf_file(config_name: str):
         if line.startswith("[Peer]"):
             app.logger.debug("Found a [Peer]")
             peer, x = parse_peer_or_interface(file, i + 1, limit)
-            conf_peer_data["Peers"].append(peer)
+            result["Peers"].append(peer)
         elif line.startswith("[Interface]"):
             app.logger.debug("Found an [Interface]")
             interface, x = parse_peer_or_interface(file, i + 1, limit)
-            conf_peer_data["Interface"] = interface
+            result["Interface"] = interface
         i += 1
 
     # Read Configuration File End
-    return conf_peer_data
+    return result
 
 
-def get_latest_handshake(config_name):
+def get_latest_handshake(config_name) -> dict:
     """
     Get the latest handshake from all peers of a configuration
     @param config_name: Configuration name
     @return: str
     """
+
+    result = {}
 
     # Get latest handshakes
     try:
@@ -252,7 +244,7 @@ def get_latest_handshake(config_name):
             stderr=subprocess.STDOUT,
         )
     except subprocess.CalledProcessError:
-        return "stopped"
+        return result
     data_usage = data_usage.decode("UTF-8").split()
     count = 0
     now = datetime.now()
@@ -264,108 +256,102 @@ def get_latest_handshake(config_name):
         else:
             status = "stopped"
         if int(data_usage[count + 1]) > 0:
-            g.cur.execute(
-                "UPDATE %s SET latest_handshake = '%s', status = '%s' WHERE id='%s'"
-                % (
-                    config_name,
-                    str(minus).split(".", maxsplit=1)[0],
-                    status,
-                    data_usage[count],
-                )
-            )
+            peer_id = data_usage[count]
+            result[peer_id] = {
+                "latest_handshake": str(minus).split(".", maxsplit=1)[0],
+                "status": status,
+            }
         else:
-            g.cur.execute(
-                "UPDATE %s SET latest_handshake = '(None)', status = '%s' WHERE id='%s'"
-                % (config_name, status, data_usage[count])
-            )
+            peer_id = data_usage[count]
+            result[peer_id] = {"latest_handshake": None, "status": status}
         count += 2
 
+    return result
 
-def get_transfer(config_name):
+
+def get_transfer(config_name) -> dict:
     """
     Get transfer from all peers of a configuration
     @param config_name: Configuration name
     @return: str
     """
+
+    result = {}
     # Get transfer
     try:
         data_usage = subprocess.check_output(
             f"wg show {config_name} transfer", shell=True, stderr=subprocess.STDOUT
         )
     except subprocess.CalledProcessError:
-        return "stopped"
+        return result
     data_usage = data_usage.decode("UTF-8").split("\n")
     final = []
     for i in data_usage:
         final.append(i.split("\t"))
     data_usage = final
     for i in range(len(data_usage)):
-        cur_i = g.cur.execute(
-            "SELECT total_receive, total_sent, cumu_receive, cumu_sent, status FROM %s WHERE id='%s'"
-            % (config_name, data_usage[i][0])
-        ).fetchall()
-        if len(cur_i) > 0:
-            total_sent = cur_i[0][1]
-            total_receive = cur_i[0][0]
+        peer_id = data_usage[i][0]
+        result[peer_id] = {}
+        peer_stats = db.get_net_stats_and_peer_status(config_name, peer_id)
+        if peer_stats:
+            total_sent = peer_stats[1]
+            total_receive = peer_stats[0]
             cur_total_sent = round(int(data_usage[i][2]) / (1024**3), 4)
             cur_total_receive = round(int(data_usage[i][1]) / (1024**3), 4)
-            if cur_i[0][4] == "running":
+            if peer_stats["status"] == "running":
+                peer = dict(db.get_peer_by_id(config_name, peer_id))
                 if total_sent <= cur_total_sent and total_receive <= cur_total_receive:
                     total_sent = cur_total_sent
                     total_receive = cur_total_receive
                 else:
-                    cumulative_receive = cur_i[0][2] + total_receive
-                    cumulative_sent = cur_i[0][3] + total_sent
-                    g.cur.execute(
-                        "UPDATE %s SET cumu_receive = %f, cumu_sent = %f, cumu_data = %f WHERE id = '%s'"
-                        % (
-                            config_name,
-                            round(cumulative_receive, 4),
-                            round(cumulative_sent, 4),
-                            round(cumulative_sent + cumulative_receive, 4),
-                            data_usage[i][0],
-                        )
+                    cumulative_receive = peer_stats[2] + total_receive
+                    cumulative_sent = peer_stats[3] + total_sent
+                    result[peer_id].update(
+                        {
+                            "cumu_receive": round(cumulative_receive, 4),
+                            "cumu_sent": round(cumulative_sent, 4),
+                            "cumu_data": round(cumulative_sent + cumulative_receive, 4),
+                        }
                     )
-                    total_sent = 0
-                    total_receive = 0
-                g.cur.execute(
-                    "UPDATE %s SET total_receive = %f, total_sent = %f, total_data = %f WHERE id = '%s'"
-                    % (
-                        config_name,
-                        round(total_receive, 4),
-                        round(total_sent, 4),
-                        round(total_receive + total_sent, 4),
-                        data_usage[i][0],
-                    )
+
+                result[peer_id].update(
+                    {
+                        "total_receive": round(total_receive, 4),
+                        "total_sent": round(total_sent, 4),
+                        "total_data": round(total_receive + total_sent, 4),
+                    }
                 )
 
+                total_sent = 0
+                total_receive = 0
+    return result
 
-def get_endpoint(config_name):
+
+def get_endpoint(config_name) -> dict:
     """
     Get endpoint from all peers of a configuration
     @param config_name: Configuration name
     @return: str
     """
+    result = {}
+
     # Get endpoint
     try:
         data_usage = subprocess.check_output(
             f"wg show {config_name} endpoints", shell=True, stderr=subprocess.STDOUT
         )
     except subprocess.CalledProcessError:
-        return "stopped"
+        return result
     data_usage = data_usage.decode("UTF-8").split()
     count = 0
     for _ in range(int(len(data_usage) / 2)):
-        g.cur.execute(
-            "UPDATE "
-            + config_name
-            + " SET endpoint = '%s' WHERE id = '%s'"
-            % (data_usage[count + 1], data_usage[count])
-        )
+        peer_id = data_usage[count]
+        result[peer_id] = {"endpoint": data_usage[count + 1]}
         count += 2
+    return result
 
 
-def get_allowed_ip(conf_peer_data, config_name):
+def get_allowed_ip(conf_peer_data, config_name) -> dict:
     """
     Get allowed ips from all peers of a configuration
     @param conf_peer_data: Configuration peer data
@@ -373,13 +359,11 @@ def get_allowed_ip(conf_peer_data, config_name):
     @return: None
     """
     # Get allowed ip
+    data = {}
     for i in conf_peer_data["Peers"]:
-        g.cur.execute(
-            "UPDATE "
-            + config_name
-            + " SET allowed_ip = '%s' WHERE id = '%s'"
-            % (i.get("AllowedIPs", "(None)"), i["PublicKey"])
-        )
+        peer_id = i["PublicKey"]
+        data[peer_id] = {"allowed_ips": i.get("AllowedIPs", "(None)")}
+    return data
 
 
 def wg_peer_data_to_db(config_name):
@@ -392,11 +376,12 @@ def wg_peer_data_to_db(config_name):
     config = get_dashboard_conf()
     failed_index = []
     for i in range(len(conf_peer_data["Peers"])):
-        if "PublicKey" in conf_peer_data["Peers"][i].keys():
-            result = db.get_peer_by_id(
+        wg_peer = conf_peer_data["Peers"][i]
+        if "PublicKey" in wg_peer.keys():
+            db_peer = db.get_peer_by_id(
                 config_name, conf_peer_data["Peers"][i]["PublicKey"]
             )
-            if len(result) == 0:
+            if not db_peer:
                 new_data = {
                     "id": conf_peer_data["Peers"][i]["PublicKey"],
                     "private_key": "",
@@ -434,13 +419,27 @@ def wg_peer_data_to_db(config_name):
 
     db.remove_stale_peers(config_name, conf_peer_data)
 
-    get_latest_handshake(config_name)
-    get_transfer(config_name)
-    get_endpoint(config_name)
-    get_allowed_ip(conf_peer_data, config_name)
+    handshakes = get_latest_handshake(config_name)
+    transfers = get_transfer(config_name)
+    endpoints = get_endpoint(config_name)
+    allowed_ips = get_allowed_ip(conf_peer_data, config_name)
+    keys = set()
+    for x in [handshakes, transfers, endpoints, allowed_ips]:
+        app.logger.debug(x)
+        keys.update(x.keys())
+    for id in keys:
+        db_peer = db.get_peer_by_id(config_name, id)
+        if db_peer:
+            db_peer = dict(db_peer)
+            for x in [handshakes, transfers, endpoints, allowed_ips]:
+                try:
+                    db_peer.update(x[id])
+                except KeyError:
+                    pass
+    db.update_peer(config_name, db_peer)
 
 
-def get_peers(config_name, search, sort_t):
+def update_db_and_get_peers(config_name, search, sort_t):
     """
     Get all peers.
     @param config_name: Name of WG interface
@@ -452,12 +451,9 @@ def get_peers(config_name, search, sort_t):
     @return: list
     """
     tic = time.perf_counter()
-    col = g.cur.execute("PRAGMA table_info(" + config_name + ")").fetchall()
-    col = [a[1] for a in col]
     wg_peer_data_to_db(config_name)
 
-    data = db.get_peers(config_name, search)
-    result = [{col[i]: data[k][i] for i in range(len(col))} for k in range(len(data))]
+    result = list(map(lambda x: dict(x), db.get_peers(config_name, search)))
 
     if sort_t == "allowed_ip":
         result = sorted(
@@ -471,7 +467,7 @@ def get_peers(config_name, search, sort_t):
     else:
         result = sorted(result, key=lambda d: d[sort_t])
     toc = time.perf_counter()
-    print(f"Finish fetching peers in {toc - tic:0.4f} seconds")
+    app.logger.debug(f"Finish fetching peers in {toc - tic:0.4f} seconds")
     return result
 
 
@@ -530,12 +526,10 @@ def get_conf_total_data(config_name):
     @param config_name: Configuration name
     @return: list
     """
-    data = g.cur.execute(
-        "SELECT total_sent, total_receive, cumu_sent, cumu_receive FROM " + config_name
-    )
+    data = db.get_net_stats(config_name)
     upload_total = 0
     download_total = 0
-    for i in data.fetchall():
+    for i in data:
         upload_total += i[0]
         download_total += i[1]
         upload_total += i[2]
@@ -768,7 +762,9 @@ def auth_req():
             and request.endpoint != "auth"
             and "username" not in session
         ):
-            print("User not signed in - Attempted access: " + str(request.endpoint))
+            app.logger.info(
+                "User not signed in - Attempted access: " + str(request.endpoint)
+            )
             if request.endpoint != "index":
                 session["message"] = "You need to sign in first!"
             else:
@@ -1187,7 +1183,7 @@ def get_conf(config_name):
     else:
         conf_address = config_interface["Address"]
     conf_data = {
-        "peer_data": get_peers(config_name, search, sort),
+        "peer_data": update_db_and_get_peers(config_name, search, sort),
         "name": config_name,
         "status": get_conf_status(config_name),
         "total_data_usage": get_conf_total_data(config_name),
@@ -1389,17 +1385,19 @@ def add_peer(config_name):
 
         wg_quick_save(config_name)
         wg_peer_data_to_db(config_name)
-        peer = dict(db.get_peer_by_id(config_name, public_key)[0])
-        peer.update(
-            {
-                "id": public_key,
-                "name": data["name"],
-                "private_key": data["private_key"],
-                "DNS": data["DNS"],
-                "endpoint_allowed_ip": endpoint_allowed_ip,
-            }
-        )
-        db.update_peer(config_name, peer)
+        peer = db.get_peer_by_id(config_name, public_key)
+        if peer:
+            peer = dict(peer)
+            peer.update(
+                {
+                    "id": public_key,
+                    "name": data["name"],
+                    "private_key": data["private_key"],
+                    "DNS": data["DNS"],
+                    "endpoint_allowed_ip": endpoint_allowed_ip,
+                }
+            )
+            db.update_peer(config_name, peer)
         return "true"
     except subprocess.CalledProcessError as exc:
         return exc.output.strip()

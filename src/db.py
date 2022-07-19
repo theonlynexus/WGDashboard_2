@@ -2,6 +2,21 @@ from flask import g
 from flask import current_app as app
 
 
+def get_net_stats(config_name: str) -> list:
+    data = g.cur.execute(
+        f"SELECT total_sent, total_receive, cumu_sent, cumu_receive FROM {config_name}"
+    )
+    return data.fetchall()
+
+
+def get_net_stats_and_peer_status(config_name: str, id: str) -> list:
+    data = g.cur.execute(
+        "SELECT total_receive, total_sent, cumu_receive, cumu_sent, status FROM %s WHERE id='%s'"
+        % (config_name, id)
+    )
+    return data.fetchone()
+
+
 def get_peers(config_name: str, search: str = None) -> list:
     """Returns the list of records which name matches the search string, or all if no search is provided"""
 
@@ -11,15 +26,17 @@ def get_peers(config_name: str, search: str = None) -> list:
         sql += f" WHERE name LIKE '%{search}%'"
     else:
         sql = "SELECT * FROM " + config_name + " WHERE name LIKE '%" + search + "%'"
-    return g.cur.execute(sql).fetchall()
+    data = g.cur.execute(sql)
+    return data.fetchall()
 
 
 def get_peer_by_id(config_name: str, id: str) -> list:
-    """Returns a list with one record if the id is found, otherwise an empty list"""
+    """Returns the record matching the pass id or None."""
 
     app.logger.debug(f"db.get_peer_by_id({config_name}, {id})")
     sql = "SELECT * FROM %s WHERE id='%s'" % (config_name, id)
-    return g.cur.execute(sql).fetchall()
+    data = g.cur.execute(sql)
+    return data.fetchone()
 
 
 def remove_stale_peers(config_name: str, peer_data: str):
@@ -54,8 +71,7 @@ def insert_peer(config_name: str, data: dict):
 def update_peer(config_name: str, data: dict):
     app.logger.debug(f"db.update_peer({config_name}, {data})")
     sql = f"""
-    UPDATE {config_name} 
-    SET     
+    UPDATE {config_name} SET     
     private_key=:private_key, DNS=:DNS, endpoint_allowed_ip=:endpoint_allowed_ip, name=:name, 
     total_receive=:total_receive, total_sent=:total_sent,  total_data=:total_data, endpoint=:endpoint, status=:status,
     latest_handshake=:latest_handshake, allowed_ip=:allowed_ip, cumu_receive=:cumu_receive, cumu_sent=:cumu_sent, 
