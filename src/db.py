@@ -1,5 +1,5 @@
 from flask import g
-from __main__ import app
+from dashboard import app
 import sqlite3
 
 

@@ -1,7 +1,7 @@
 import subprocess
 import os
-from flask import request, redirect, session, jsonify, g, render_template
-from __main__ import app
+from flask import request, redirect, jsonify, g, render_template
+from dashboard import app
 from datetime import datetime
 import urllib.parse
 import urllib.request
