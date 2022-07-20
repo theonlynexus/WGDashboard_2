@@ -228,7 +228,34 @@ def read_interface_config_file(config_name: str, base_dir: str) -> dict:
     return result
 
 
-def get_interface_peers_latest_handshakes(config_name) -> dict:
+def switch_interface(interface_name: str, base_dir: str):
+    config_file = os.path.join(base_dir, f"{interface_name}.conf")
+    status = get_interface_status(interface_name)
+    if status == "running":
+        check = subprocess.check_output(
+            "wg-quick down " + config_file, shell=True, stderr=subprocess.STDOUT
+        )
+    elif status == "stopped":
+        subprocess.check_output(
+            "wg-quick up " + config_file, shell=True, stderr=subprocess.STDOUT
+        )
+
+
+def enable_interface(interface_name: str, base_dir: str):
+    config_file = os.path.join(base_dir, f"{interface_name}.conf")
+    check = subprocess.check_output(
+        "wg-quick up " + config_file, shell=True, stderr=subprocess.STDOUT
+    )
+
+
+def disable_interface(interface_name: str, base_dir: str):
+    config_file = os.path.join(base_dir, f"{interface_name}.conf")
+    check = subprocess.check_output(
+        "wg-quick down " + config_file, shell=True, stderr=subprocess.STDOUT
+    )
+
+
+def get_interface_peers_latest_handshakes(interface_name) -> dict:
     """
     Get the latest handshake from all peers of a configuration
     @param config_name: Configuration name
@@ -240,7 +267,7 @@ def get_interface_peers_latest_handshakes(config_name) -> dict:
     # Get latest handshakes
     try:
         data_usage = subprocess.check_output(
-            f"wg show {config_name} latest-handshakes",
+            f"wg show {interface_name} latest-handshakes",
             shell=True,
             stderr=subprocess.STDOUT,
         )

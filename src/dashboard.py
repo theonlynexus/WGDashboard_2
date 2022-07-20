@@ -178,7 +178,7 @@ def wg_peer_data_to_db(config_name):
         app.logger.debug(x)
         keys.update(x.keys())
     for id in keys:
-        data = {"id":id}
+        data = {"id": id}
         for x in [handshakes, transfers, endpoints, allowed_ips]:
             try:
                 data.update(x[id])
@@ -832,22 +832,11 @@ def switch(config_name):
 
     status = wg.get_interface_status(config_name)
     config_file = os.path.join(WG_CONF_DIR, f"{config_name}.conf")
-    if status == "running":
-        try:
-            check = subprocess.check_output(
-                "wg-quick down " + config_file, shell=True, stderr=subprocess.STDOUT
-            )
-        except subprocess.CalledProcessError as exc:
-            session["switch_msg"] = exc.output.strip().decode("utf-8")
-            return redirect("/")
-    elif status == "stopped":
-        try:
-            subprocess.check_output(
-                "wg-quick up " + config_file, shell=True, stderr=subprocess.STDOUT
-            )
-        except subprocess.CalledProcessError as exc:
-            session["switch_msg"] = exc.output.strip().decode("utf-8")
-            return redirect("/")
+    try:
+        wg.switch_interface(config_name, WG_CONF_DIR)
+    except subprocess.CalledProcessError as exc:
+        session["switch_msg"] = exc.output.strip().decode("utf-8")
+        return redirect("/")
     return redirect(request.referrer)
 
 
