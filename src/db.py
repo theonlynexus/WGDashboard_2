@@ -1,18 +1,32 @@
 from flask import g
 from flask import current_app as app
+import sqlite3
 
 
 def get_net_stats(interface_name: str) -> list:
+    app.logger.debug(f"db.get_net_stats({interface_name})")
     data = g.cur.execute(
         f"SELECT total_sent, total_receive, cumu_sent, cumu_receive FROM {interface_name}"
     )
     return data.fetchall()
 
 
-def get_net_stats_and_peer_status(interface_name: str, id: str) -> list:
+def get_net_stats_and_peer_status(interface_name: str, id: str) -> sqlite3.Row | None:
+    app.logger.debug(f"db.get_net_stats_and_peer_status({interface_name})")
     data = g.cur.execute(
-        "SELECT total_receive, total_sent, cumu_receive, cumu_sent, status FROM %s WHERE id='%s'"
+        """SELECT total_receive, total_sent, cumu_receive, cumu_sent, status 
+           FROM %s WHERE id='%s'"""
         % (interface_name, id)
+    )
+    return data.fetchone()
+
+
+def get_peer_count_by_allowed_ip(interface_name: str, ip: str, id: str):
+    app.logger.debug(f"db.get_peer_count_by_allowed_ip({interface_name}, {ip}, {id})")
+    data = g.cur.execute(
+        f"""SELECT COUNT(*) FROM {interface_name} 
+            WHERE id != :id AND allowed_ip LIKE :ip""",
+        {"id": id, "ip": ip},
     )
     return data.fetchone()
 
@@ -39,7 +53,15 @@ def get_peer_by_id(interface_name: str, id: str) -> list:
     return data.fetchone()
 
 
-def get_all_peer_ids(interface_name: str):
+def get_peer_allowed_ips(interface_name: str) -> list:
+    app.logger.debug(f"db.get_peer_allowed_ips({interface_name})")
+    sql = f"SELECT allowed_ip FROM {interface_name}"
+    data = g.cur.execute(sql)
+    return data.fetchall()
+
+
+def get_peer_ids(interface_name: str):
+    app.logger.debug(f"db.get_peer_ids({interface_name})")
     data = g.cur.execute("SELECT id FROM %s" % interface_name)
     return data.fetchall()
 
@@ -48,7 +70,7 @@ def remove_stale_peers(interface_name: str, peer_data: str):
     """Removes entries that which id is present in the db, but not in peer_data"""
 
     app.logger.debug(f"db.remove_stale_peers({interface_name}, peer_data)")
-    db_key = set(map(lambda a: a[0], get_all_peer_ids(interface_name)))
+    db_key = set(map(lambda a: a[0], get_peer_ids(interface_name)))
     wg_key = set(map(lambda a: a["PublicKey"], peer_data["Peers"]))
     app.logger.debug(f"db_key: {db_key}")
     app.logger.debug(f"wg_key: {wg_key}")
@@ -73,9 +95,10 @@ def insert_peer(interface_name: str, data: dict):
     g.cur.execute(sql, data)
 
 
-def create_table_if_missing(name: str):
+def create_table_if_missing(table_name: str):
+    app.logger.debug(f"db.create_table_if_missing({table_name})")
     create_table = f"""
-        CREATE TABLE IF NOT EXISTS {name} (
+        CREATE TABLE IF NOT EXISTS {table_name} (
             id VARCHAR NOT NULL PRIMARY KEY, private_key VARCHAR NULL UNIQUE, DNS VARCHAR NULL, 
             endpoint_allowed_ip VARCHAR NULL, name VARCHAR NULL UNIQUE, total_receive FLOAT NULL, 
             total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
@@ -88,6 +111,7 @@ def create_table_if_missing(name: str):
 
 
 def update_peer(interface_name: str, data: dict):
+    app.logger.debug(f"db.interface_name({data})")
     id = data["id"]
     db_peer = get_peer_by_id(interface_name, id)
     if db_peer:

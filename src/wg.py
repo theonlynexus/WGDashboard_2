@@ -29,6 +29,31 @@ def _parse_peer_or_interface(lines, i, limit):
     return data, i - 1
 
 
+def set_peer_options(
+    interface_name, public_key, allowed_ips, preshared_key_filename=None
+):
+    if preshared_key_filename:
+        status = subprocess.check_output(
+            f"wg set {interface_name} peer {public_key} allowed-ips {allowed_ips} preshared-key {f_name}",
+            shell=True,
+            stderr=subprocess.STDOUT,
+        )
+    else:
+        status = subprocess.check_output(
+            f"wg set {interface_name} peer {public_key} allowed-ips {allowed_ips}",
+            shell=True,
+            stderr=subprocess.STDOUT,
+        )
+
+
+def remove_peer_from_interface(interface_name, public_key):
+    subprocess.check_output(
+        f"wg set {interface_name} peer {public_key} remove",
+        shell=True,
+        stderr=subprocess.STDOUT,
+    )
+
+
 def get_interface_listen_port(config_name, base_dir):
     """
     Get listen port number.
@@ -87,10 +112,10 @@ def get_interface_total_net_stats(config_name):
     upload_total = 0
     download_total = 0
     for i in data:
-        upload_total += i[0]
-        download_total += i[1]
-        upload_total += i[2]
-        download_total += i[3]
+        upload_total += i["total_sent"]
+        download_total += i["total_receive"]
+        upload_total += i["cum_sent"]
+        download_total += i["cum_receive"]
     total = round(upload_total + download_total, 4)
     upload_total = round(upload_total, 4)
     download_total = round(download_total, 4)
@@ -270,8 +295,8 @@ def get_interface_peers_net_stats(config_name) -> dict:
         result[peer_id] = {}
         peer_stats = db.get_net_stats_and_peer_status(config_name, peer_id)
         if peer_stats:
-            total_sent = peer_stats[1]
-            total_receive = peer_stats[0]
+            total_sent = peer_stats["total_sent"]
+            total_receive = peer_stats["total_receive"]
             cur_total_sent = round(int(data_usage[i][2]) / (1024**3), 4)
             cur_total_receive = round(int(data_usage[i][1]) / (1024**3), 4)
             if peer_stats["status"] == "running":
@@ -279,8 +304,8 @@ def get_interface_peers_net_stats(config_name) -> dict:
                     total_sent = cur_total_sent
                     total_receive = cur_total_receive
                 else:
-                    cumulative_receive = peer_stats[2] + total_receive
-                    cumulative_sent = peer_stats[3] + total_sent
+                    cumulative_receive = peer_stats["cum_receive"] + total_receive
+                    cumulative_sent = peer_stats["cum_sent"] + total_sent
                     result[peer_id].update(
                         {
                             "cumu_receive": round(cumulative_receive, 4),
