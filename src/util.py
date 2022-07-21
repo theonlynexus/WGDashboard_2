@@ -55,8 +55,8 @@ def write_dashboard_conf(config: str, dashboard_conf_file_path: str):
     Write to configuration
     @param config: Input configuration
     """
-    with open(dashboard_conf_file_path, "w", encoding="utf-8") as conf_object:
-        config.write(conf_object)
+    with open(dashboard_conf_file_path, "w", encoding="utf-8") as f:
+        config.write(f)
 
 
 def wg_peer_data_to_db(
@@ -285,6 +285,11 @@ def strip_subnet(ipv4: str) -> str:
     except:
         address = ipv4
     return address
+
+
+def get_base_net(ipv4: str) -> str:
+    ipaddress.ip_address(ipv4)
+    return ".".join(ipv4.split(".")[0:3])
 
 
 def ensure_subnet(ipv4: str, default_subnet: str = "24") -> str:
