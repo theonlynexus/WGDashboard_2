@@ -29,17 +29,22 @@ from flask import (
 from flask_qrcode import QRcode
 from icmplib import ping, traceroute
 
+_path = "/config"
+
 # Dashboard Version
 DASHBOARD_VERSION = "v3.0.6"
 
+# WireGuard's configuration path
+WG_CONF_PATH = _path
+WG_SERVER_CONF_FILE = os.path.join(WG_CONF_PATH, "wg0.conf")
+
 # Dashboard Config Name
-CONFIGURATION_PATH = "/config"
-WG_CONF_PATH = CONFIGURATION_PATH
-WG_SERVER_CONF_FILE = os.path.join(CONFIGURATION_PATH, "wg0.conf")
+CONFIGURATION_PATH = _path
 DB_PATH = os.path.join(CONFIGURATION_PATH, "db")
 if not os.path.isdir(DB_PATH):
     os.mkdir(DB_PATH)
 DASHBOARD_CONF_FILE = os.path.join(CONFIGURATION_PATH, "wg-dashboard.ini")
+
 SERVER_PRIVATE_KEY_FILE = os.path.join(
     CONFIGURATION_PATH, "server", "privatekey-server"
 )
@@ -620,12 +625,11 @@ def check_update(config):
         for i in output:
             if not i["prerelease"]:
                 release.append(i)
-        if config.get("Server", "version") == release[0]["tag_name"]:
-            result = "false"
-        else:
-            result = "true"
 
-        return result
+        if config["Server"]["version"] > release[0]["tag_name"]:
+            return "true"
+
+        return "false"
     except urllib.error.HTTPError:
         return "false"
 
@@ -637,7 +641,7 @@ Configure DashBoard before start web-server
 
 def run_dashboard():
     global UPDATE
-    config = util.read_dashboard_conf(DASHBOARD_CONF_FILE)
+    config = read_and_update_config_file()
     UPDATE = check_update(config)
     # global app_ip
     app_ip = config.get("Server", "app_ip")
