@@ -113,8 +113,6 @@ def insert_peer(interface_name: str, data: dict):
     Inserts a peer of `interface_name` with the given `data`
     """
     app.logger.debug(f"db.insert_peer({interface_name}, {data})")
-    if not data["name"]:
-        data["name"] = data["id"]
     sql = f"""
     INSERT INTO {interface_name} 
         VALUES (:id, :private_key, :DNS, :endpoint_allowed_ips, :name, :total_receive, :total_sent, 
@@ -131,7 +129,7 @@ def create_table_if_missing(interface_name: str):
     app.logger.debug(f"db.create_table_if_missing({interface_name})")
     create_table = f"""
         CREATE TABLE IF NOT EXISTS {interface_name} (
-            id VARCHAR NOT NULL PRIMARY KEY, private_key VARCHAR NULL UNIQUE, DNS VARCHAR NULL, 
+            id VARCHAR NOT NULL PRIMARY KEY, private_key VARCHAR NULL, DNS VARCHAR NULL, 
             endpoint_allowed_ips VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
             total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
             status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ips VARCHAR NULL, 
@@ -160,8 +158,6 @@ def _update_peer(interface_name: str, data: dict):
     Updates the peer of `interface_name` with the given `data`.
     `data` should contain the peer's `id` (public key), plus any other field to be updated.
     """
-    if not data["name"]:
-        data["name"] = data["id"]
     app.logger.debug(f"db.update_peer({interface_name}, {data})")
     sql = f"""
     UPDATE {interface_name} SET     
