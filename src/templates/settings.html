@@ -30,9 +30,9 @@
                                             name="peer_global_DNS" value="{{ peer_global_DNS }}" required>
                                     </div>
                                     <div class="col-sm-6">
-                                        <label for="peer_endpoint_allowed_ip">Peer Endpoint Allowed IPs</label>
+                                        <label for="peer_endpoint_allowed_ips">Peer Endpoint Allowed IPs</label>
                                         <input type="text" class="form-control mb-4" id="peer_endpoint_allowed_ip"
-                                            name="peer_endpoint_allowed_ip" value="{{ peer_endpoint_allowed_ip }}"
+                                            name="peer_endpoint_allowed_ips" value="{{ peer_endpoint_allowed_ips }}"
                                             required>
                                     </div>
                                     <div class="col-sm-6">
@@ -59,6 +59,23 @@
                     </div>
                 </div>
                 <hr>
+                <div class="card mb-3">
+                    <h6 class="card-header">WireGuard Configuration Path</h6>
+                    <div class="card-body">
+                        <form action="/update_wg_conf_path" method="post" class="update_wg_conf_path">
+                            <div class="form-group">
+                                <label for="wg_conf_path">Path</label>
+                                <input type="text" class="form-control mb-2" id="wg_conf_path" name="wg_conf_path"
+                                    value="{{ wg_conf_path }}">
+                                <p class="text-muted">Remember to remove <code>/</code> at the end of your path. e.g
+                                    <code>/etc/wireguard</code>
+                                </p>
+                                <button class="btn btn-danger change_path">Update Path & Restart Dashboard</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
                 <div class="card mb-3">
                     <h6 class="card-header">Account</h6>
                     <div class="card-body">
@@ -90,6 +107,33 @@
                     </div>
                 </div>
                 {% endif %}
+                <div class="card">
+                    <h6 class="card-header">Dashboard Configuration</h6>
+                    <div class="card-body">
+                        <form action="/update_app_ip_port" method="post" class="update_app_ip_port">
+                            <div class="form-group">
+                                <div class="row">
+                                    <div class="col-sm">
+                                        <label for="app_ip">Dashboard IP</label>
+                                        <input type="text" class="form-control mb-2" id="app_ip" name="app_ip"
+                                            value="{{ app_ip }}">
+                                        <p><small class="text-danger mb-4">0.0.0.0 means it can be access by anyone with
+                                                your server
+                                                IP Address.</small></p>
+                                    </div>
+                                    <div class="col-sm">
+                                        <label for="app_port">Dashboard Port</label>
+                                        <input type="text" class="form-control mb-4" id="app_port" name="app_port"
+                                            value="{{ app_port }}">
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-danger confirm_modal" data-toggle="modal"
+                                    data-target="#confirmModal">Update Configuration & Restart Dashboard
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
         </main>
         <!-- Modal -->

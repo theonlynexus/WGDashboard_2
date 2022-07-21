@@ -113,6 +113,8 @@ def insert_peer(interface_name: str, data: dict):
     Inserts a peer of `interface_name` with the given `data`
     """
     app.logger.debug(f"db.insert_peer({interface_name}, {data})")
+    if not data["name"]:
+        data["name"] = data["id"]
     sql = f"""
     INSERT INTO {interface_name} 
         VALUES (:id, :private_key, :DNS, :endpoint_allowed_ips, :name, :total_receive, :total_sent, 
@@ -158,6 +160,8 @@ def _update_peer(interface_name: str, data: dict):
     Updates the peer of `interface_name` with the given `data`.
     `data` should contain the peer's `id` (public key), plus any other field to be updated.
     """
+    if not data["name"]:
+        data["name"] = data["id"]
     app.logger.debug(f"db.update_peer({interface_name}, {data})")
     sql = f"""
     UPDATE {interface_name} SET     

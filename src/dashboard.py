@@ -33,18 +33,18 @@ from icmplib import ping, traceroute
 DASHBOARD_VERSION = "v3.0.6"
 
 # Dashboard Config Name
-configuration_path = "/config"
-WG_CONF_PATH = configuration_path
-WG_SERVER_CONF_FILE = os.path.join(configuration_path, "wg0.conf")
-DB_PATH = os.path.join(configuration_path, "db")
+CONFIGURATION_PATH = "/config"
+WG_CONF_PATH = CONFIGURATION_PATH
+WG_SERVER_CONF_FILE = os.path.join(CONFIGURATION_PATH, "wg0.conf")
+DB_PATH = os.path.join(CONFIGURATION_PATH, "db")
 if not os.path.isdir(DB_PATH):
     os.mkdir(DB_PATH)
-DASHBOARD_CONF_FILE = os.path.join(configuration_path, "wg-dashboard.ini")
+DASHBOARD_CONF_FILE = os.path.join(CONFIGURATION_PATH, "wg-dashboard.ini")
 SERVER_PRIVATE_KEY_FILE = os.path.join(
-    configuration_path, "server", "privatekey-server"
+    CONFIGURATION_PATH, "server", "privatekey-server"
 )
-SERVER_PUBLIC_KEY_FILE = os.path.join(configuration_path, "server", "publickey-server")
-SERVER_CONFIG_FILE = os.path.join(configuration_path, "wg0.conf")
+SERVER_PUBLIC_KEY_FILE = os.path.join(CONFIGURATION_PATH, "server", "publickey-server")
+SERVER_CONFIG_FILE = os.path.join(CONFIGURATION_PATH, "wg0.conf")
 
 # Upgrade Required
 UPDATE = None
