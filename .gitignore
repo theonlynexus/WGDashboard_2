@@ -127,3 +127,19 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+.vscode
+.DS_Store
+.idea
+src/db
+src/test.py
+*.db
+src/wg-dashboard.ini
+src/static/pic.xd
+*.conf
+private_key.txt
+public_key.txt
+venv/**
+log/**
+release/*
+src/db/wgdashboard.db
+.jshintrc
