@@ -287,6 +287,11 @@ def strip_subnet(ipv4: str) -> str:
     return address
 
 
+def get_base_net(ipv4: str) -> str:
+    ipaddress.ip_address(ipv4)
+    return ".".join(ipv4.split(".")[0:3])
+
+
 def ensure_subnet(ipv4: str, default_subnet: str = "24") -> str:
     ipv4 = ipv4.strip()
     try:

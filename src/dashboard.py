@@ -29,18 +29,27 @@ from flask import (
 from flask_qrcode import QRcode
 from icmplib import ping, traceroute
 
+_path = "/config"
+
 # Dashboard Version
 DASHBOARD_VERSION = "v3.0.6"
 
 # WireGuard's configuration path
-WG_CONF_PATH = None
+WG_CONF_PATH = _path
+WG_SERVER_CONF_FILE = os.path.join(WG_CONF_PATH, "wg0.conf")
 
 # Dashboard Config Name
-CONFIGURATION_PATH = os.getenv("CONFIGURATION_PATH", ".")
+CONFIGURATION_PATH = _path
 DB_PATH = os.path.join(CONFIGURATION_PATH, "db")
 if not os.path.isdir(DB_PATH):
     os.mkdir(DB_PATH)
 DASHBOARD_CONF_FILE = os.path.join(CONFIGURATION_PATH, "wg-dashboard.ini")
+
+SERVER_PRIVATE_KEY_FILE = os.path.join(
+    CONFIGURATION_PATH, "server", "privatekey-server"
+)
+SERVER_PUBLIC_KEY_FILE = os.path.join(CONFIGURATION_PATH, "server", "publickey-server")
+SERVER_CONFIG_FILE = os.path.join(CONFIGURATION_PATH, "wg0.conf")
 
 # Upgrade Required
 UPDATE = None
