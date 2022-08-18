@@ -1,18 +1,18 @@
 /**
- * tools.js - Copyright(C) 2021 Donald Zou [https://github.com/donaldzou]
+ * tools.js - Copyright(C) 2021 Donald Zou [https://github.com/donaldzou], 2022 M. Fierro https://github.com/theonlynexus]
  */
 
-$(".ip_dropdown").on("change",function (){
+$(".ip_dropdown").on("change", function () {
     $(".modal.show .btn").removeAttr("disabled");
 });
 
-$(".conf_dropdown").on("change", function (){
+$(".conf_dropdown").on("change", function () {
     $(".modal.show .ip_dropdown").html('<option value="none" selected="selected" disabled>Loading...');
     $.ajax({
         url: "/get_ping_ip",
         method: "POST",
-        data: "config=" + $(this).children("option:selected").val(),
-        success: function (res){
+        data: "interface_name=" + $(this).children("option:selected").val(),
+        success: function (res) {
             $(".modal.show .ip_dropdown").html("");
             $(".modal.show .ip_dropdown").append('<option value="none" selected="selected" disabled>Choose an IP');
             $(".modal.show .ip_dropdown").append(res);
@@ -20,25 +20,25 @@ $(".conf_dropdown").on("change", function (){
     });
 });
 // Ping Tools
-$(".send_ping").on("click", function (){
-    $(this).attr("disabled","disabled");
+$(".send_ping").on("click", function () {
+    $(this).attr("disabled", "disabled");
     $(this).html("Pinging...");
-    $("#ping_modal .form-control").attr("disabled","disabled");
+    $("#ping_modal .form-control").attr("disabled", "disabled");
     $.ajax({
-        method:"POST",
-        data: "ip="+ $(':selected', $("#ping_modal .ip_dropdown")).val() +
+        method: "POST",
+        data: "ip=" + $(':selected', $("#ping_modal .ip_dropdown")).val() +
             "&count=" + $("#ping_modal .ping_count").val(),
         url: "/ping_ip",
-        success: function (res){
+        success: function (res) {
             $(".ping_result tbody").html("");
-            let html = '<tr><th scope="row">Address</th><td>'+res.address+'</td></tr>' +
-                '<tr><th scope="row">Is Alive</th><td>'+res.is_alive+'</td></tr>' +
-                '<tr><th scope="row">Min RTT</th><td>'+res.min_rtt+'ms</td></tr>' +
-                '<tr><th scope="row">Average RTT </th><td>'+res.avg_rtt+'ms</td></tr>' +
-                '<tr><th scope="row">Max RTT</th><td>'+res.max_rtt+'ms</td></tr>' +
-                '<tr><th scope="row">Package Sent</th><td>'+res.package_sent+'</td></tr>' +
-                '<tr><th scope="row">Package Received</th><td>'+res.package_received+'</td></tr>' +
-                '<tr><th scope="row">Package Loss</th><td>'+res.package_loss+'</td></tr>';
+            let html = '<tr><th scope="row">Address</th><td>' + res.address + '</td></tr>' +
+                '<tr><th scope="row">Is Alive</th><td>' + res.is_alive + '</td></tr>' +
+                '<tr><th scope="row">Min RTT</th><td>' + res.min_rtt + 'ms</td></tr>' +
+                '<tr><th scope="row">Average RTT </th><td>' + res.avg_rtt + 'ms</td></tr>' +
+                '<tr><th scope="row">Max RTT</th><td>' + res.max_rtt + 'ms</td></tr>' +
+                '<tr><th scope="row">Package Sent</th><td>' + res.package_sent + '</td></tr>' +
+                '<tr><th scope="row">Package Received</th><td>' + res.package_received + '</td></tr>' +
+                '<tr><th scope="row">Package Loss</th><td>' + res.package_loss + '</td></tr>';
             $(".ping_result tbody").html(html);
             $(".send_ping").removeAttr("disabled");
             $(".send_ping").html("Ping");
@@ -48,18 +48,18 @@ $(".send_ping").on("click", function (){
 });
 
 // Traceroute Tools
-$(".send_traceroute").on("click", function (){
-    $(this).attr("disabled","disabled");
+$(".send_traceroute").on("click", function () {
+    $(this).attr("disabled", "disabled");
     $(this).html("Tracing...");
-    $("#traceroute_modal .form-control").attr("disabled","disabled");
+    $("#traceroute_modal .form-control").attr("disabled", "disabled");
     $.ajax({
         url: "/traceroute_ip",
         method: "POST",
         data: "ip=" + $(':selected', $("#traceroute_modal .ip_dropdown")).val(),
-        success: function (res){
+        success: function (res) {
             $(".traceroute_result tbody").html("");
             res.forEach((ele) =>
-                $(".traceroute_result tbody").append('<tr><th scope="row">'+ele.hop+'</th><td>'+ele.ip+'</td><td>'+ele.avg_rtt+'</td><td>'+ele.min_rtt+'</td><td>'+ele.max_rtt+'</td></tr>'));
+                $(".traceroute_result tbody").append('<tr><th scope="row">' + ele.hop + '</th><td>' + ele.ip + '</td><td>' + ele.avg_rtt + '</td><td>' + ele.min_rtt + '</td><td>' + ele.max_rtt + '</td></tr>'));
             $(".send_traceroute").removeAttr("disabled").html("Traceroute");
             $("#traceroute_modal .form-control").removeAttr("disabled");
         }

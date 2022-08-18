@@ -1,3 +1,8 @@
+"""
+<WGDashboard V2> - Copyright(C) 2021 Donald Zou, M. Fierro [https://github.com/donaldzou, https://github.com/theonlynexus]
+Under Apache-2.0 License
+"""
+
 import subprocess
 import os
 from flask import request, redirect, jsonify, g, render_template
