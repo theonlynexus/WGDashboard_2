@@ -1,3 +1,8 @@
+"""
+<WGDashboard 2> - Copyright(C) 2021 Donald Zou [https://github.com/donaldzou], 2022 M. Fierro https://github.com/theonlynexus]
+Under Apache-2.0 License
+"""
+
 from dashboard import DASHBOARD_VERSION
 
 dash_config = {

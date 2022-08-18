@@ -1,5 +1,5 @@
 """
-< WGDashboard > - Copyright(C) 2021 Donald Zou [https://github.com/donaldzou]
+<WGDashboard 2> - Copyright(C) 2021 Donald Zou [https://github.com/donaldzou], 2022 M. Fierro https://github.com/theonlynexus]
 Under Apache-2.0 License
 """
 
@@ -30,7 +30,7 @@ from flask_qrcode import QRcode
 from icmplib import ping, traceroute
 
 # Dashboard Version
-DASHBOARD_VERSION = "v3.0.6"
+DASHBOARD_VERSION = "v0.1.0"
 
 # WireGuard's configuration path
 WG_CONF_PATH = None
@@ -489,10 +489,10 @@ def get_ping_ip():
     @return: HTML containing a list of IPs
     """
 
-    config = request.form["config"]
-    peers = g.cur.execute(
-        "SELECT id, name, allowed_ips, endpoint FROM " + config
-    ).fetchall()
+    from db import get_allowed_ips_and_endpoint
+
+    interface_name = request.form["interface_name"]
+    peers = get_allowed_ips_and_endpoint(interface_name)
     html = ""
     for i in peers:
         html += '<optgroup label="' + i[1] + " - " + i[0] + '">'

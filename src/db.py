@@ -1,3 +1,8 @@
+"""
+<WGDashboard 2> - Copyright(C) 2021 Donald Zou [https://github.com/donaldzou], 2022 M. Fierro https://github.com/theonlynexus]
+Under Apache-2.0 License
+"""
+
 from flask import g
 from dashboard import app
 import sqlite3
@@ -12,6 +17,14 @@ def get_net_stats(interface_name: str) -> list[sqlite3.Row]:
         f"SELECT total_sent, total_receive, cumu_sent, cumu_receive FROM {interface_name}"
     )
     return data.fetchall()
+
+
+def get_allowed_ips_and_endpoint(interface_name):
+    peers = g.cur.execute(
+        "SELECT id, name, allowed_ips, endpoint FROM " + interface_name
+    ).fetchall()
+
+    return peers
 
 
 def get_net_stats_and_peer_status(interface_name: str, id: str) -> sqlite3.Row | None:
