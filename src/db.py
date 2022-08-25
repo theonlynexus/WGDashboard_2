@@ -1,6 +1,34 @@
+"""
+<WGDashboard 2> - Copyright(C) 2021 Donald Zou [https://github.com/donaldzou], 2022 M. Fierro https://github.com/theonlynexus]
+Under Apache-2.0 License
+"""
+
 from flask import g
 from dashboard import app
 import sqlite3
+
+
+def get_peers_with_private_key(interface_name):
+    data = g.cur.execute(
+        "SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name FROM "
+        + interface_name
+        + " WHERE private_key != ''"
+    )
+    return data.fetchall()
+
+
+def get_peer_by_id(interface_name, id):
+    """
+    Gets basic parameters for a given interface and peer
+    """
+
+    data = g.cur.execute(
+        "SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name FROM "
+        + interface_name
+        + " WHERE id = ?",
+        (id,),
+    )
+    return data.fetchall()
 
 
 def get_net_stats(interface_name: str) -> list[sqlite3.Row]:
@@ -14,6 +42,14 @@ def get_net_stats(interface_name: str) -> list[sqlite3.Row]:
     return data.fetchall()
 
 
+def get_allowed_ips_and_endpoint(interface_name):
+    peers = g.cur.execute(
+        "SELECT id, name, allowed_ips, endpoint FROM " + interface_name
+    ).fetchall()
+
+    return peers
+
+
 def get_net_stats_and_peer_status(interface_name: str, id: str) -> sqlite3.Row | None:
     """
     Gets net stats for a given peer of `interface_name` and the data as `dict`, `None` if not found.
@@ -23,6 +59,17 @@ def get_net_stats_and_peer_status(interface_name: str, id: str) -> sqlite3.Row |
         """SELECT total_receive, total_sent, cumu_receive, cumu_sent, status 
            FROM %s WHERE id='%s'"""
         % (interface_name, id)
+    )
+    return data.fetchone()
+
+
+def get_peer_count_by_similar_ip(interface_name: str, ip: str) -> sqlite3.Row | None:
+    data = g.cur.execute(
+        "SELECT COUNT(*) FROM "
+        + interface_name
+        + " WHERE allowed_ips LIKE '"
+        + allowed_ips
+        + "/%'",
     )
     return data.fetchone()
 

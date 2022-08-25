@@ -1,3 +1,8 @@
+"""
+<WGDashboard V2> - Copyright(C) 2021 Donald Zou, M. Fierro [https://github.com/donaldzou, https://github.com/theonlynexus]
+Under Apache-2.0 License
+"""
+
 import subprocess
 import os
 from flask import request, redirect, jsonify, g, render_template
@@ -59,12 +64,7 @@ def register_routes(app):
         """
 
         peer_id = request.args.get("id")
-        get_peer = g.cur.execute(
-            "SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key FROM "
-            + interface_name
-            + " WHERE id = ?",
-            (peer_id,),
-        ).fetchall()
+        get_peer = db.get_peer_by_id(interface_name, peer_id)
         config = g.conf
         if len(get_peer) == 1:
             peer = get_peer[0]
@@ -114,11 +114,7 @@ def register_routes(app):
         @return: JSON Object
         """
 
-        get_peer = g.cur.execute(
-            "SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name FROM "
-            + interface_name
-            + " WHERE private_key != ''"
-        ).fetchall()
+        get_peer = db.get_peers_with_private_key(interface_name)
         config = g.conf
         data = []
         public_key = wg.get_interface_public_key(interface_name, g.WG_CONF_PATH)
@@ -215,12 +211,7 @@ def register_routes(app):
         """
 
         peer_id = request.args.get("id")
-        get_peer = g.cur.execute(
-            "SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name FROM "
-            + interface_name
-            + " WHERE id = ?",
-            (peer_id,),
-        ).fetchall()
+        get_peer = db.get_peer_by_id(interface_name, peer_id)
         config = g.conf
         if len(get_peer) == 1:
             peer = get_peer[0]
@@ -343,13 +334,7 @@ def register_routes(app):
             return interface_name + " is not running."
         if public_key in keys:
             return "Public key already exist."
-        check_dup_ip = g.cur.execute(
-            "SELECT COUNT(*) FROM "
-            + interface_name
-            + " WHERE allowed_ips LIKE '"
-            + allowed_ips
-            + "/%'",
-        ).fetchone()
+        check_dup_ip = db.get_peer_count_by_similar_ip(interface_name, allowed_ips)
         if check_dup_ip[0] != 0:
             return "Allowed IP already taken by another peer."
         if not util.check_DNS(dns_addresses):
