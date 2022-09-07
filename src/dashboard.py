@@ -84,11 +84,15 @@ def auth_req():
     """
     if getattr(g, "db", None) is None:
         g.db = util.connect_db(CONFIGURATION_PATH)
+        g.cur = g.db.cursor()
+        from db import create_peers_table
+        create_peers_table(g)
+
     g.DASHBOARD_CONF_FILE = DASHBOARD_CONF_FILE
     g.WG_CONF_PATH = WG_CONF_PATH
     g.DB_PATH = DB_PATH
     g.CONFIGURATION_PATH = CONFIGURATION_PATH
-    g.cur = g.db.cursor()
+    
     g.conf = read_and_update_config_file()
     session["update"] = UPDATE
     session["dashboard_version"] = DASHBOARD_VERSION
@@ -631,16 +635,7 @@ Configure DashBoard before start web-server
 
 
 def run_dashboard():
-    global UPDATE
-    config = read_and_update_config_file()
-    UPDATE = check_update(config)
-    # global app_ip
-    app_ip = config.get("Server", "app_ip")
-    # global app_port
-    app_port = config.get("Server", "app_port")
-    global WG_CONF_PATH
-    WG_CONF_PATH = config.get("Server", "wg_conf_path")
-    config.clear()
+    app_ip, app_port = get_host_bind()
     app.run(host=app_ip, debug=False, port=app_port)
     return app
 
@@ -651,9 +646,19 @@ Get host and port for web-server
 
 
 def get_host_bind():
-    config = util.read_dashboard_conf(DASHBOARD_CONF_FILE)
+    global UPDATE
+    config = read_and_update_config_file()
+    UPDATE = check_update(config)
+    # global app_ip
     app_ip = config.get("Server", "app_ip")
+    # global app_port
     app_port = config.get("Server", "app_port")
+    global WG_CONF_PATH
+    WG_CONF_PATH = config.get("Server", "wg_conf_path")
+
+    # config = util.read_dashboard_conf(DASHBOARD_CONF_FILE)
+    # app_ip = config.get("Server", "app_ip")
+    # app_port = config.get("Server", "app_port")
     return app_ip, app_port
 
 

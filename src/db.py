@@ -9,11 +9,11 @@ import sqlite3
 
 
 def get_peers_with_private_key(interface_name):
-    data = g.cur.execute(
-        "SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name FROM "
-        + interface_name
-        + " WHERE private_key != ''"
-    )
+    q_sql = """SELECT SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name
+               FROM peers 
+               WHERE interface=:interface_name AND private_key != ''"""
+    q_data = {"interface_name": interface_name}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -22,12 +22,11 @@ def get_peer_by_id(interface_name, id):
     Gets basic parameters for a given interface and peer
     """
 
-    data = g.cur.execute(
-        "SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name FROM "
-        + interface_name
-        + " WHERE id = ?",
-        (id,),
-    )
+    q_sql = """SELECT SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name
+               FROM peers 
+               WHERE interface=:interface_name AND id=:id"""
+    q_data = {"interface_name": interface_name, "id": id}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -36,18 +35,21 @@ def get_net_stats(interface_name: str) -> list[sqlite3.Row]:
     Gets net stats for all peers of `interface_name` and returns a list of dicts
     """
     app.logger.debug(f"db.get_net_stats({interface_name})")
-    data = g.cur.execute(
-        f"SELECT total_sent, total_receive, cumu_sent, cumu_receive FROM {interface_name}"
-    )
+    q_sql = """SELECT total_sent, total_receive, cumu_sent, cumu_receive 
+               FROM peers 
+               WHERE interface=:interface_name"""
+    q_data = {"interface_name": interface_name}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchall()
 
 
 def get_allowed_ips_and_endpoint(interface_name):
-    peers = g.cur.execute(
-        "SELECT id, name, allowed_ips, endpoint FROM " + interface_name
-    ).fetchall()
-
-    return peers
+    q_sql = f"""SELECT id, name, allowed_ips, endpoint 
+                FROM peers 
+                WHERE interface=:interface_name"""
+    q_data = {"interface_name": interface_name}
+    data = g.cur.execute(q_sql, q_data)
+    return data.fetchall()
 
 
 def get_net_stats_and_peer_status(interface_name: str, id: str) -> sqlite3.Row | None:
@@ -55,24 +57,20 @@ def get_net_stats_and_peer_status(interface_name: str, id: str) -> sqlite3.Row |
     Gets net stats for a given peer of `interface_name` and the data as `dict`, `None` if not found.
     """
     app.logger.debug(f"db.get_net_stats_and_peer_status({interface_name})")
-    data = g.cur.execute(
-        """SELECT total_receive, total_sent, cumu_receive, cumu_sent, status 
-           FROM %s WHERE id='%s'"""
-        % (interface_name, id)
-    )
+    q_sql = """SELECT total_receive, total_sent, cumu_receive, cumu_sent, status 
+               FROM peers 
+               WHERE interface=:interface_name AND id=:id"""
+    q_data = {"interface_name": interface_name, "id": id}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchone()
 
 
 def get_peer_count_by_similar_ip(
     interface_name: str, allowed_ips: str
 ) -> sqlite3.Row | None:
-    data = g.cur.execute(
-        "SELECT COUNT(*) FROM "
-        + interface_name
-        + " WHERE allowed_ips LIKE '"
-        + allowed_ips
-        + "/%'",
-    )
+    q_sql = "SELECT COUNT(*) FROM peers WHERE allowed_ips LIKE :allowed_ips"
+    q_data = {"allowed_ips": f"%{allowed_ips}%"}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchone()
 
 
@@ -83,11 +81,10 @@ def get_peer_count_by_allowed_ips(
     Gets and returns the number of peers of `interface_name` that have allowed_ips similar to `ip`.
     """
     app.logger.debug(f"db.get_peer_count_by_allowed_ips({interface_name}, {ip}, {id})")
-    data = g.cur.execute(
-        f"""SELECT COUNT(*) FROM {interface_name} 
-            WHERE id != :id AND allowed_ips LIKE :ip""",
-        {"id": id, "ip": ip},
-    )
+    q_sql = f"""SELECT COUNT(*) FROM peers
+            WHERE interface = :interface_name AND id != :id AND allowed_ips LIKE :ip"""
+    q_data = {"id": id, "ip": ip, "interface_name": interface_name}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchone()
 
 
@@ -95,12 +92,14 @@ def get_peers(interface_name: str, search: str = None) -> list[sqlite3.Row]:
     """Returns the list of records which name matches the search string, or all if no search is provided"""
 
     app.logger.debug(f"db.get_peers({interface_name}, {search})")
-    sql = f"SELECT * FROM {interface_name}"
     if search:
-        sql += f" WHERE name LIKE '%{search}%'"
+        q_sql = f"SELECT * FROM peers WHERE name LIKE :search"
     else:
-        sql = "SELECT * FROM " + interface_name + " WHERE name LIKE '%" + search + "%'"
-    data = g.cur.execute(sql)
+        q_sql = (
+            f"SELECT * FROM peers WHERE interface=:interface_name AND name LIKE :search"
+        )
+    q_data = {"interface_name": interface_name, "search": f"%{search}%"}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -110,8 +109,9 @@ def get_peer_by_id(interface_name: str, id: str) -> sqlite3.Row | None:
     """
 
     app.logger.debug(f"db.get_peer_by_id({interface_name}, {id})")
-    sql = "SELECT * FROM %s WHERE id='%s'" % (interface_name, id)
-    data = g.cur.execute(sql)
+    q_sql = "SELECT * FROM peers WHERE interface=:interface_name AND id=:id"
+    q_data = {"interface_name": interface_name, "id": id}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchone()
 
 
@@ -120,8 +120,9 @@ def get_peer_allowed_ips(interface_name: str) -> list[sqlite3.Row]:
     Returns the `allowed_ips` of all peers of `interface_name`.
     """
     app.logger.debug(f"db.get_peer_allowed_ips({interface_name})")
-    sql = f"SELECT allowed_ips FROM {interface_name}"
-    data = g.cur.execute(sql)
+    q_sql = "SELECT allowed_ips FROM peers WHERE interface=:interface_name"
+    q_data = {"interface_name": interface_name}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -130,7 +131,9 @@ def get_peer_ids(interface_name: str) -> list[sqlite3.Row]:
     Returns the `id`s of all peers of `interface_name`.
     """
     app.logger.debug(f"db.get_peer_ids({interface_name})")
-    data = g.cur.execute("SELECT id FROM %s" % interface_name)
+    q_sql = "SELECT id FROM peers WHERE interface=:interface_name"
+    q_data = {"interface_name": interface_name}
+    data = g.cur.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -153,8 +156,9 @@ def delete_peer(interface_name: str, id: str):
     Removes a peer of `interface_name` with the given `id`
     """
     app.logger.debug(f"db.delete_peer({interface_name}, {id})")
-    sql = "DELETE FROM %s WHERE id = '%s'" % (interface_name, id)
-    g.cur.execute(sql)
+    q_sql = "DELETE FROM peers WHERE interface=:interface_name AND id=:id"
+    q_data = {"interface_name": interface_name, "id": id}
+    g.cur.execute(q_sql, q_data)
 
 
 def insert_peer(interface_name: str, data: dict):
@@ -162,28 +166,31 @@ def insert_peer(interface_name: str, data: dict):
     Inserts a peer of `interface_name` with the given `data`
     """
     app.logger.debug(f"db.insert_peer({interface_name}, {data})")
-    sql = f"""
-    INSERT INTO {interface_name} 
-        VALUES (:id, :private_key, :DNS, :endpoint_allowed_ips, :name, :total_receive, :total_sent, 
+    q_data = data.copy().update({"interface_name": interface_name})
+    q_sql = f"""
+    INSERT INTO peers
+        VALUES (:interface_name, :id, :private_key, :DNS, :endpoint_allowed_ips, :name, :total_receive, :total_sent, 
         :total_data, :endpoint, :status, :latest_handshake, :allowed_ips, :cumu_receive, :cumu_sent, 
         :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
     """
-    g.cur.execute(sql, data)
+    g.cur.execute(q_sql, q_data)
 
 
-def create_table_if_missing(interface_name: str):
+def create_peers_table(g):
     """
     Creates a table for `interface_name`, if missing.
     """
-    app.logger.debug(f"db.create_table_if_missing({interface_name})")
+    app.logger.debug(f"db.create_peers_table()")
     create_table = f"""
-        CREATE TABLE IF NOT EXISTS {interface_name} (
-            id VARCHAR NOT NULL PRIMARY KEY, private_key VARCHAR NULL, DNS VARCHAR NULL, 
+        CREATE TABLE IF NOT EXISTS peers (
+            interface VARCHAR NOT NULL, id VARCHAR NOT NULL, 
+            private_key VARCHAR NULL, DNS VARCHAR NULL, 
             endpoint_allowed_ips VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
             total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
             status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ips VARCHAR NULL, 
             cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-            keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL
+            keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
+            PRIMARY KEY(interface, id)
         )
     """
     g.cur.execute(create_table)
@@ -208,12 +215,13 @@ def _update_peer(interface_name: str, data: dict):
     `data` should contain the peer's `id` (public key), plus any other field to be updated.
     """
     app.logger.debug(f"db.update_peer({interface_name}, {data})")
-    sql = f"""
-    UPDATE {interface_name} SET     
+    q_data = data.copy().update({"interface_name": interface_name})
+    q_sql = f"""
+    UPDATE peers SET     
     private_key=:private_key, DNS=:DNS, endpoint_allowed_ips=:endpoint_allowed_ips, name=:name, 
     total_receive=:total_receive, total_sent=:total_sent,  total_data=:total_data, endpoint=:endpoint, status=:status,
     latest_handshake=:latest_handshake, allowed_ips=:allowed_ips, cumu_receive=:cumu_receive, cumu_sent=:cumu_sent, 
     cumu_data=:cumu_data, mtu=:mtu, keepalive=:keepalive, remote_endpoint=:remote_endpoint, preshared_key=:preshared_key
-    WHERE id = :id
+    WHERE id = :id AND interface = :interface_name
     """
-    g.cur.execute(sql, data)
+    g.cur.execute(q_sql, q_data)

@@ -186,7 +186,6 @@ def get_conf_list(wg_conf_dir: str):
     for interface_name in os.listdir(wg_conf_dir):
         if regex_match("^(.{1,}).(conf)$", interface_name):
             interface_name = interface_name.split(".")[0]
-            db.create_table_if_missing(interface_name)
             temp = {
                 "conf": interface_name,
                 "status": wg.get_interface_status(interface_name),
