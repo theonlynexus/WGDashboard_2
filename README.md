@@ -1,9 +1,4 @@
 
-##### Known issues on WGDashboard
-
-- IPv6 in WireGuard not fully supoprted
-
-<hr>
 <p align="center">
   <img alt="WGDashboard" src="img/logo.png" width="128">
 </p>
@@ -16,14 +11,20 @@ Goals of this form:
 
 1. More structure and cleaner code
 2. Multiple implementations with feature parity but different stacks (e.g. Flask/FastAPI, JQuery/Vue, etc.) to serve as educational content
-2. Docker, Docker, Docker
-3. Self-provisioning capabilities similar to [firezone](https://www.firezone.dev/)
+3. Docker, Docker, Docker
+4. Self-provisioning capabilities similar to [firezone](https://www.firezone.dev/)
 
-## Table of Content
+Check the [ToDo](TODO.md)
+
+## Table of Contents
 
 - [WGDashboard 2](#wgdashboard-2)
   - [🛒 Dependencies](#-dependencies)
   - [✨ Contributors](#-contributors)
+
+## Known issues on WGDashboard
+
+- IPv6 in WireGuard not fully supoprted
 
 ## Requirements (local install)
 
