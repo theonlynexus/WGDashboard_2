@@ -26,7 +26,6 @@ from flask import (
     jsonify,
     g,
 )
-from flask_qrcode import QRcode
 from icmplib import ping, traceroute
 
 # Dashboard Version
@@ -50,8 +49,6 @@ app = Flask("WGDashboard")
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 5206928
 app.secret_key = secrets.token_urlsafe(16)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
-# Enable QR Code Generator
-QRcode(app)
 
 # (NB) It is important to import these after the app is created
 import wg, util, rest_routes
