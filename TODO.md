@@ -4,7 +4,8 @@
 
 - [ ] Cleanup Python code
   - [ ] App factory
-  - [ ] Open and close DB only at startup/shutdown
+  - [X] Open and close DB only at startup/shutdown (one DB per app)
+  - [X] Use only safe query methods (don't trust user input)
 - [ ] Cleanup JS code
 
 ## Features
