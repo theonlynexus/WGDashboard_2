@@ -6,6 +6,7 @@ Under Apache-2.0 License
 import subprocess
 import os
 from flask import request, redirect, jsonify, g, render_template
+from names_generator import generate_name
 from datetime import datetime
 import urllib.parse
 import urllib.request
@@ -15,6 +16,40 @@ from io import StringIO
 
 # Import local modules
 import db, wg, util
+
+illegal_filename_tokens = [
+                    ".",
+                    ",",
+                    "/",
+                    "?",
+                    "<",
+                    ">",
+                    "\\",
+                    ":",
+                    "*",
+                    "|" '"',
+                    "com1",
+                    "com2",
+                    "com3",
+                    "com4",
+                    "com5",
+                    "com6",
+                    "com7",
+                    "com8",
+                    "com9",
+                    "lpt1",
+                    "lpt2",
+                    "lpt3",
+                    "lpt4",
+                    "lpt5",
+                    "lpt6",
+                    "lpt7",
+                    "lpt8",
+                    "lpt9",
+                    "con",
+                    "nul",
+                    "prn",
+                ]
 
 
 def register_routes(app):
@@ -100,10 +135,30 @@ def register_routes(app):
         peer_id = request.args.get("id")
         peer = db.get_peer_by_id(interface_name, peer_id)
         if peer:
-            qrcode = get_config_as_str(interface_name, peer)
-            return render_template("qrcode.html", i=qrcode)
+            peer_config = get_config_as_str(interface_name, peer)
+            return render_template("qrcode.html", i=peer_config)
         else:
             return redirect("/configuration/" + interface_name)
+
+    def clean_filename(filename:str) -> str:
+        global illegal_filename_tokenss
+        # from names_generator import generate_name
+        # if not filename:
+        #     return generate_name(style='hyphen')
+        
+        result = filename        
+        for i in illegal_filename_tokens:
+            result = result.replace(i, "")
+        result = "".join(result.split(" "))
+        return result
+
+    def get_peer_filename_and_conf(interface_name, peer) -> tuple[str, str]:
+        filename = peer["name"]
+        filename = clean_filename(filename)
+        filename = filename + "_" + interface_name
+        peer_conf = get_config_as_str(interface_name, peer)
+        return filename, peer_conf
+            
 
     @app.route("/download_all/<interface_name>", methods=["GET"])
     def download_all(interface_name):
@@ -113,61 +168,11 @@ def register_routes(app):
         @return: JSON Object
         """
 
-        get_peer = db.get_peers_with_private_key(interface_name)
-        config = g.conf
+        peers = db.get_peers_with_private_key(interface_name)
         data = []
-        public_key = wg.get_interface_public_key(interface_name, g.WG_CONF_PATH)
-        listen_port = wg.get_interface_listen_port(interface_name, g.WG_CONF_PATH)
-        endpoint = config.get("Peers", "remote_endpoint") + ":" + listen_port
-        for peer in get_peer:
-            preshared_key = peer["preshared_key"]
-            filename = peer["name"]
-            if len(filename) == 0:
-                filename = "Untitled_Peer"
-            else:
-                # Clean filename
-                illegal_filename = [
-                    ".",
-                    ",",
-                    "/",
-                    "?",
-                    "<",
-                    ">",
-                    "\\",
-                    ":",
-                    "*",
-                    "|" '"',
-                    "com1",
-                    "com2",
-                    "com3",
-                    "com4",
-                    "com5",
-                    "com6",
-                    "com7",
-                    "com8",
-                    "com9",
-                    "lpt1",
-                    "lpt2",
-                    "lpt3",
-                    "lpt4",
-                    "lpt5",
-                    "lpt6",
-                    "lpt7",
-                    "lpt8",
-                    "lpt9",
-                    "con",
-                    "nul",
-                    "prn",
-                ]
-                for i in illegal_filename:
-                    filename = filename.replace(i, "")
-                if len(filename) == 0:
-                    filename = "Untitled_Peer"
-                filename = "".join(filename.split(" "))
-            filename = filename + "_" + interface_name
-
-            return_data = get_config_as_str(interface_name, peer)
-            data.append({"filename": f"{filename}.conf", "content": return_data})
+        for peer in peers:
+            filename, peer_conf = get_peer_filename_and_conf(interface_name, peer)
+            data.append({"filename": f"{filename}.conf", "content": peer_conf})
         return jsonify(
             {"status": True, "peers": data, "filename": f"{interface_name}.zip"}
         )
@@ -182,99 +187,17 @@ def register_routes(app):
         """
 
         peer_id = request.args.get("id")
-        get_peer = db.get_peer_by_id(interface_name, peer_id)
-        config = g.conf
-        if len(get_peer) == 1:
-            peer = get_peer[0]
-            if peer[0] != "":
-                public_key = wg.get_interface_public_key(interface_name, g.WG_CONF_PATH)
-                listen_port = wg.get_interface_listen_port(
-                    interface_name, g.WG_CONF_PATH
-                )
-                endpoint = config.get("Peers", "remote_endpoint") + ":" + listen_port
-                private_key = peer[0]
-                allowed_ips = peer[1]
-                dns_addresses = peer[2]
-                mtu_value = peer[3]
-                endpoint_allowed_ips = peer[4]
-                keepalive = peer[5]
-                preshared_key = peer[6]
-                filename = peer[7]
-                if len(filename) == 0:
-                    filename = "Untitled_Peer"
-                else:
-                    filename = peer[7]
-                    # Clean filename
-                    illegal_filename = [
-                        ".",
-                        ",",
-                        "/",
-                        "?",
-                        "<",
-                        ">",
-                        "\\",
-                        ":",
-                        "*",
-                        "|" '"',
-                        "com1",
-                        "com2",
-                        "com3",
-                        "com4",
-                        "com5",
-                        "com6",
-                        "com7",
-                        "com8",
-                        "com9",
-                        "lpt1",
-                        "lpt2",
-                        "lpt3",
-                        "lpt4",
-                        "lpt5",
-                        "lpt6",
-                        "lpt7",
-                        "lpt8",
-                        "lpt9",
-                        "con",
-                        "nul",
-                        "prn",
-                    ]
-                    for i in illegal_filename:
-                        filename = filename.replace(i, "")
-                    if len(filename) == 0:
-                        filename = "Untitled_Peer"
-                    filename = "".join(filename.split(" "))
-                filename = filename + "_" + interface_name
-                psk = ""
-                if preshared_key != "":
-                    psk = "\nPresharedKey = " + preshared_key
+        peer = db.get_peer_by_id(interface_name, peer_id)
+        if peer:
+            filename, peer_conf = get_peer_filename_and_conf(interface_name, peer)
 
-                return_data = (
-                    "[Interface]\nPrivateKey = "
-                    + private_key
-                    + "\nAddress = "
-                    + allowed_ips
-                    + "\nDNS = "
-                    + dns_addresses
-                    + "\nMTU = "
-                    + str(mtu_value)
-                    + "\n\n[Peer]\nPublicKey = "
-                    + public_key
-                    + "\nAllowedIPs = "
-                    + endpoint_allowed_ips
-                    + "\nEndpoint = "
-                    + endpoint
-                    + "\nPersistentKeepalive = "
-                    + str(keepalive)
-                    + psk
-                )
-
-                return jsonify(
-                    {
-                        "status": True,
-                        "filename": f"{filename}.conf",
-                        "content": return_data,
-                    }
-                )
+            return jsonify(
+                {
+                    "status": True,
+                    "filename": f"{filename}.conf",
+                    "content": peer_conf,
+                }
+            )
         return jsonify({"status": False, "filename": "", "content": ""})
 
     @app.route("/add_peer/<interface_name>", methods=["POST"])
@@ -332,6 +255,9 @@ def register_routes(app):
             util.wg_peer_data_to_db(
                 interface_name, g.WG_CONF_PATH, g.DASHBOARD_CONF_FILE
             )
+            if not data["name"]:
+                from names_generator import generate_name
+                data["name"] = generate_name(style='hyphen')
             data = {
                 "id": public_key,
                 "name": data["name"],
@@ -619,9 +545,6 @@ def register_routes(app):
         wg_command = ["wg", "set", interface_name]
         sql_command = []
         for i in range(amount):
-            keys[i][
-                "name"
-            ] = f"{interface_name}_{datetime.now().strftime('%m%d%Y%H%M%S')}_Peer_#_{(i + 1)}"
             wg_command.append("peer")
             wg_command.append(keys[i]["publicKey"])
             keys[i]["allowed_ips"] = ips.pop(0)
@@ -636,22 +559,30 @@ def register_routes(app):
                 keys[i]["psk_file"] = ""
             wg_command.append("allowed-ips")
             wg_command.append(keys[i]["allowed_ips"])
-            update = [
-                "UPDATE ",
-                interface_name,
-                " SET name = '",
-                keys[i]["name"],
-                "', private_key = '",
-                keys[i]["privateKey"],
-                "', DNS = '",
-                dns_addresses,
-                "', endpoint_allowed_ips = '",
-                endpoint_allowed_ips,
-                "' WHERE id = '",
-                keys[i]["publicKey"],
-                "'",
-            ]
-            sql_command.append(update)
+
+            tmp = data.copy()
+            tmp.update({
+                "id": keys[i]["publicKey"],
+                "name": f"{interface_name}_{generate_name(style='hyphen')}",
+                "private_key": keys[i]["privateKey"],
+                "total_receive": 0,
+                "total_sent": 0,
+                "total_data": 0,
+                "endpoint": "N/A",
+                "endpoint_allowed_ips": endpoint_allowed_ips,
+                "status": "stopped",
+                "latest_handshake": "N/A",
+                "allowed_ips": "N/A",
+                "cumu_receive": 0,
+                "cumu_sent": 0,
+                "cumu_data": 0,
+                "traffic": [],
+                "mtu": g.conf.get("Peers", "peer_mtu"),
+                "keepalive": g.conf.get("Peers", "peer_keep_alive"),
+                "remote_endpoint": g.conf.get("Peers", "remote_endpoint"),
+                "preshared_key": keys[i]["psk_file"]
+            })
+            db.insert_peer(interface_name, tmp)
         try:
             status = subprocess.check_output(
                 " ".join(wg_command), shell=True, stderr=subprocess.STDOUT
