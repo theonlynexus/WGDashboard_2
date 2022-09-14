@@ -392,13 +392,11 @@ def quick_save_interface_config(interface_name: str, base_dir: str):
     )
 
 
-def gen_public_key(private_key: str):
+def gen_public_key(private_key: str) -> dict:
     """Generate the public key.
 
     @param private_key: Private key
-    @type private_key: str
     @return: Return dict with public key or error message
-    @rtype: dict
     """
 
     with open("private_key.txt", "w", encoding="utf-8") as file_object:

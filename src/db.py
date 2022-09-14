@@ -7,6 +7,48 @@ from flask import g
 from dashboard import app
 import sqlite3
 
+_db = None
+
+
+def get_db():
+    return _db
+
+
+def connect_db(dashboard_configuration_dir: str):
+    """
+    Connect to the database
+    @return: sqlite3.Connection
+    """
+    import os
+
+    _db = sqlite3.connect(
+        os.path.join(dashboard_configuration_dir, "db", "wgdashboard.db")
+    )
+    _db.row_factory = sqlite3.Row
+
+
+def create_peers_table():
+    """
+    Creates a table for `interface_name`, if missing.
+    """
+    from db import get_db
+
+    app.logger.debug(f"db.create_peers_table()")
+    create_table = f"""
+        CREATE TABLE IF NOT EXISTS peers (
+            interface VARCHAR NOT NULL, id VARCHAR NOT NULL, 
+            private_key VARCHAR NULL, DNS VARCHAR NULL, 
+            endpoint_allowed_ips VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
+            total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
+            status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ips VARCHAR NULL, 
+            cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
+            keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
+            PRIMARY KEY(interface, id)
+        )
+    """
+    _db.cursor().execute(create_table)
+    _db.commit()
+
 
 def get_peers_with_private_key(interface_name):
     q_sql = """SELECT SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name
@@ -174,26 +216,6 @@ def insert_peer(interface_name: str, data: dict):
         :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
     """
     g.cur.execute(q_sql, q_data)
-
-
-def create_peers_table(g):
-    """
-    Creates a table for `interface_name`, if missing.
-    """
-    app.logger.debug(f"db.create_peers_table()")
-    create_table = f"""
-        CREATE TABLE IF NOT EXISTS peers (
-            interface VARCHAR NOT NULL, id VARCHAR NOT NULL, 
-            private_key VARCHAR NULL, DNS VARCHAR NULL, 
-            endpoint_allowed_ips VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-            total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-            status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ips VARCHAR NULL, 
-            cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-            keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
-            PRIMARY KEY(interface, id)
-        )
-    """
-    g.cur.execute(create_table)
 
 
 def update_peer(interface_name: str, data: dict):
