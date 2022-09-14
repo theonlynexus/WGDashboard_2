@@ -3,6 +3,8 @@
 ## Codebase
 
 - [ ] Cleanup Python code
+  - [ ] App factory
+  - [ ] Open and close DB only at startup/shutdown
 - [ ] Cleanup JS code
 
 ## Features
@@ -13,5 +15,6 @@
 
 ## Educational
 
+- [ ] Add documentation and rationale
 - [ ] JQuery VS Vue.js
 - [ ] Pure SQL VS ORM (SqlAlchemy/PonyORM)
