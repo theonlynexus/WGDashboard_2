@@ -19,6 +19,7 @@ dash_config = {
         "internal_subnet": "10.13.13.0",
         "app_ip": "0.0.0.0",
         "app_port": 10086,
+        "debug": False,
     },
     "Peers": {
         "peer_global_dns": "10.13.13.1",

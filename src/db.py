@@ -5,7 +5,71 @@ Under Apache-2.0 License
 
 from flask import g
 from dashboard import app
+from threading import RLock
 import sqlite3
+
+_db = None
+_cursor = None
+_lock = RLock()
+
+
+def get_db():
+    global _db
+
+    return _db
+
+
+def connect_db(dashboard_configuration_dir: str):
+    """
+    Connect to the database
+    @return: sqlite3.Connection
+    """
+    import os
+
+    global _db, _cursor
+
+    _db = sqlite3.connect(
+        os.path.join(dashboard_configuration_dir, "db", "wgdashboard.db"),
+        check_same_thread=False,
+    )
+    _db.row_factory = sqlite3.Row
+    _cursor = _db.cursor()
+
+
+def execute_locked(q_sql, q_data=None):
+    locked = _lock.acquire()
+    if locked:
+        try:
+            if q_data:
+                _cursor.execute(q_sql, q_data)
+            else:
+                _cursor.execute(q_sql)
+            _db.commit()
+        finally:
+            _lock.release()
+
+
+def create_peers_table():
+    """
+    Creates a table for `interface_name`, if missing.
+    """
+
+    global _db
+
+    app.logger.debug(f"db.create_peers_table()")
+    create_table = f"""
+        CREATE TABLE IF NOT EXISTS peers (
+            interface VARCHAR NOT NULL, id VARCHAR NOT NULL, 
+            private_key VARCHAR NULL, DNS VARCHAR NULL, 
+            endpoint_allowed_ips VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
+            total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
+            status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ips VARCHAR NULL, 
+            cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
+            keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
+            PRIMARY KEY(interface, id)
+        )
+    """
+    execute_locked(create_table)
 
 
 def get_peers_with_private_key(interface_name):
@@ -13,7 +77,7 @@ def get_peers_with_private_key(interface_name):
                FROM peers 
                WHERE interface=:interface_name AND private_key != ''"""
     q_data = {"interface_name": interface_name}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -26,7 +90,7 @@ def get_peer_by_id(interface_name, id):
                FROM peers 
                WHERE interface=:interface_name AND id=:id"""
     q_data = {"interface_name": interface_name, "id": id}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -39,7 +103,7 @@ def get_net_stats(interface_name: str) -> list[sqlite3.Row]:
                FROM peers 
                WHERE interface=:interface_name"""
     q_data = {"interface_name": interface_name}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -48,7 +112,7 @@ def get_allowed_ips_and_endpoint(interface_name):
                 FROM peers 
                 WHERE interface=:interface_name"""
     q_data = {"interface_name": interface_name}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -61,7 +125,7 @@ def get_net_stats_and_peer_status(interface_name: str, id: str) -> sqlite3.Row |
                FROM peers 
                WHERE interface=:interface_name AND id=:id"""
     q_data = {"interface_name": interface_name, "id": id}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchone()
 
 
@@ -70,7 +134,7 @@ def get_peer_count_by_similar_ip(
 ) -> sqlite3.Row | None:
     q_sql = "SELECT COUNT(*) FROM peers WHERE allowed_ips LIKE :allowed_ips"
     q_data = {"allowed_ips": f"%{allowed_ips}%"}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchone()
 
 
@@ -84,7 +148,7 @@ def get_peer_count_by_allowed_ips(
     q_sql = f"""SELECT COUNT(*) FROM peers
             WHERE interface = :interface_name AND id != :id AND allowed_ips LIKE :ip"""
     q_data = {"id": id, "ip": ip, "interface_name": interface_name}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchone()
 
 
@@ -99,7 +163,7 @@ def get_peers(interface_name: str, search: str = None) -> list[sqlite3.Row]:
             f"SELECT * FROM peers WHERE interface=:interface_name AND name LIKE :search"
         )
     q_data = {"interface_name": interface_name, "search": f"%{search}%"}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -111,7 +175,7 @@ def get_peer_by_id(interface_name: str, id: str) -> sqlite3.Row | None:
     app.logger.debug(f"db.get_peer_by_id({interface_name}, {id})")
     q_sql = "SELECT * FROM peers WHERE interface=:interface_name AND id=:id"
     q_data = {"interface_name": interface_name, "id": id}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchone()
 
 
@@ -122,7 +186,7 @@ def get_peer_allowed_ips(interface_name: str) -> list[sqlite3.Row]:
     app.logger.debug(f"db.get_peer_allowed_ips({interface_name})")
     q_sql = "SELECT allowed_ips FROM peers WHERE interface=:interface_name"
     q_data = {"interface_name": interface_name}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -133,7 +197,7 @@ def get_peer_ids(interface_name: str) -> list[sqlite3.Row]:
     app.logger.debug(f"db.get_peer_ids({interface_name})")
     q_sql = "SELECT id FROM peers WHERE interface=:interface_name"
     q_data = {"interface_name": interface_name}
-    data = g.cur.execute(q_sql, q_data)
+    data = _cursor.execute(q_sql, q_data)
     return data.fetchall()
 
 
@@ -158,7 +222,8 @@ def delete_peer(interface_name: str, id: str):
     app.logger.debug(f"db.delete_peer({interface_name}, {id})")
     q_sql = "DELETE FROM peers WHERE interface=:interface_name AND id=:id"
     q_data = {"interface_name": interface_name, "id": id}
-    g.cur.execute(q_sql, q_data)
+
+    execute_locked(q_sql, q_data)
 
 
 def insert_peer(interface_name: str, data: dict):
@@ -166,34 +231,16 @@ def insert_peer(interface_name: str, data: dict):
     Inserts a peer of `interface_name` with the given `data`
     """
     app.logger.debug(f"db.insert_peer({interface_name}, {data})")
-    q_data = data.copy().update({"interface_name": interface_name})
+    q_data = data.copy()
+    q_data.update({"interface_name": interface_name})
     q_sql = f"""
     INSERT INTO peers
         VALUES (:interface_name, :id, :private_key, :DNS, :endpoint_allowed_ips, :name, :total_receive, :total_sent, 
         :total_data, :endpoint, :status, :latest_handshake, :allowed_ips, :cumu_receive, :cumu_sent, 
         :cumu_data, :mtu, :keepalive, :remote_endpoint, :preshared_key);
     """
-    g.cur.execute(q_sql, q_data)
 
-
-def create_peers_table(g):
-    """
-    Creates a table for `interface_name`, if missing.
-    """
-    app.logger.debug(f"db.create_peers_table()")
-    create_table = f"""
-        CREATE TABLE IF NOT EXISTS peers (
-            interface VARCHAR NOT NULL, id VARCHAR NOT NULL, 
-            private_key VARCHAR NULL, DNS VARCHAR NULL, 
-            endpoint_allowed_ips VARCHAR NULL, name VARCHAR NULL, total_receive FLOAT NULL, 
-            total_sent FLOAT NULL, total_data FLOAT NULL, endpoint VARCHAR NULL, 
-            status VARCHAR NULL, latest_handshake VARCHAR NULL, allowed_ips VARCHAR NULL, 
-            cumu_receive FLOAT NULL, cumu_sent FLOAT NULL, cumu_data FLOAT NULL, mtu INT NULL, 
-            keepalive INT NULL, remote_endpoint VARCHAR NULL, preshared_key VARCHAR NULL,
-            PRIMARY KEY(interface, id)
-        )
-    """
-    g.cur.execute(create_table)
+    execute_locked(q_sql, q_data)
 
 
 def update_peer(interface_name: str, data: dict):
@@ -215,7 +262,8 @@ def _update_peer(interface_name: str, data: dict):
     `data` should contain the peer's `id` (public key), plus any other field to be updated.
     """
     app.logger.debug(f"db.update_peer({interface_name}, {data})")
-    q_data = data.copy().update({"interface_name": interface_name})
+    q_data = data.copy()
+    q_data.update({"interface_name": interface_name})
     q_sql = f"""
     UPDATE peers SET     
     private_key=:private_key, DNS=:DNS, endpoint_allowed_ips=:endpoint_allowed_ips, name=:name, 
@@ -224,4 +272,4 @@ def _update_peer(interface_name: str, data: dict):
     cumu_data=:cumu_data, mtu=:mtu, keepalive=:keepalive, remote_endpoint=:remote_endpoint, preshared_key=:preshared_key
     WHERE id = :id AND interface = :interface_name
     """
-    g.cur.execute(q_sql, q_data)
+    execute_locked(q_sql, q_data)

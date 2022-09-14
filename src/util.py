@@ -33,18 +33,6 @@ def adapt_for_rest(peer_dict: dict) -> dict:
     return peer_dict
 
 
-def connect_db(dashboard_configuration_dir: str):
-    """
-    Connect to the database
-    @return: sqlite3.Connection
-    """
-    con = sqlite3.connect(
-        os.path.join(dashboard_configuration_dir, "db", "wgdashboard.db")
-    )
-    con.row_factory = sqlite3.Row
-    return con
-
-
 def read_dashboard_conf(dashboard_conf_file_path: str):
     """
     Get dashboard configuration
