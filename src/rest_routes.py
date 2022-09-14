@@ -57,6 +57,38 @@ def register_routes(app):
         else:
             return "false"
 
+    def get_config_as_str(interface_name, peer):
+        public_key = wg.get_interface_public_key(interface_name, g.WG_CONF_PATH)
+        listen_port = wg.get_interface_listen_port(interface_name, g.WG_CONF_PATH)
+        endpoint = g.conf.get("Peers", "remote_endpoint") + ":" + listen_port
+        private_key = peer["private_key"]
+        allowed_ips = peer["allowed_ips"]
+        dns_addresses = peer["DNS"]
+        mtu_value = peer["mtu"]
+        endpoint_allowed_ips = peer["endpoint_allowed_ips"]
+        keepalive = peer["keepalive"]
+        preshared_key = peer["preshared_key"]
+
+        result = ConfigParser()
+        result.add_section("Interface")
+        result.set("Interface", "PrivateKey", private_key)
+        result.set("Interface", "Address", allowed_ips)
+        result.set("Interface", "MTU", str(mtu_value))
+        result.set("Interface", "DNS", dns_addresses)
+        result.add_section("Peer")
+        result.set("Peer", "PublicKey", public_key)
+        result.set("Peer", "AllowedIPs", endpoint_allowed_ips)
+        result.set("Peer", "PersistentKeepalive", str(keepalive))
+        result.set("Peer", "Endpoint", endpoint)
+
+        if preshared_key != "":
+            result.set("Peer", "PresharedKey", preshared_key)
+
+        with StringIO() as io:
+            result.write(io)
+            io.seek(0)
+            return io.getvalue()
+
     @app.route("/qrcode/<interface_name>", methods=["GET"])
     def generate_qrcode(interface_name):
         """
@@ -67,40 +99,9 @@ def register_routes(app):
 
         peer_id = request.args.get("id")
         peer = db.get_peer_by_id(interface_name, peer_id)
-        config = g.conf
         if peer:
-            public_key = wg.get_interface_public_key(interface_name, g.WG_CONF_PATH)
-            listen_port = wg.get_interface_listen_port(
-                interface_name, g.WG_CONF_PATH
-            )
-            endpoint = config.get("Peers", "remote_endpoint") + ":" + listen_port
-            private_key = peer["private_key"]
-            allowed_ips = peer["allowed_ips"]
-            dns_addresses = peer["DNS"]
-            mtu_value = peer["mtu"]
-            endpoint_allowed_ips = peer["endpoint_allowed_ips"]
-            keepalive = peer["keepalive"]
-            preshared_key = peer["preshared_key"]
-
-            result = ConfigParser()
-            result.add_section("Interface")
-            result.set("Interface","PrivateKey", private_key)
-            result.set("Interface","Address", allowed_ips)
-            result.set("Interface","MTU", str(mtu_value))
-            result.set("Interface","DNS", dns_addresses)
-            result.add_section("Peer")
-            result.set("Peer","PublicKey", public_key)
-            result.set("Peer","AllowedIPs", endpoint_allowed_ips)
-            result.set("Peer","PersistentKeepalive", str(keepalive))
-            result.set("Peer","Endpoint", endpoint)
-
-            if preshared_key != "":
-                result.set("Peer","PresharedKey", preshared_key)
-
-            with StringIO() as io:
-                result.write(io)
-                io.seek(0)
-                return render_template("qrcode.html", i=io.getvalue())
+            qrcode = get_config_as_str(interface_name, peer)
+            return render_template("qrcode.html", i=qrcode)
         else:
             return redirect("/configuration/" + interface_name)
 
@@ -119,18 +120,11 @@ def register_routes(app):
         listen_port = wg.get_interface_listen_port(interface_name, g.WG_CONF_PATH)
         endpoint = config.get("Peers", "remote_endpoint") + ":" + listen_port
         for peer in get_peer:
-            private_key = peer[0]
-            allowed_ips = peer[1]
-            dns_addresses = peer[2]
-            mtu_value = peer[3]
-            endpoint_allowed_ips = peer[4]
-            keepalive = peer[5]
-            preshared_key = peer[6]
-            filename = peer[7]
+            preshared_key = peer["preshared_key"]
+            filename = peer["name"]
             if len(filename) == 0:
                 filename = "Untitled_Peer"
             else:
-                filename = peer[7]
                 # Clean filename
                 illegal_filename = [
                     ".",
@@ -171,29 +165,8 @@ def register_routes(app):
                     filename = "Untitled_Peer"
                 filename = "".join(filename.split(" "))
             filename = filename + "_" + interface_name
-            psk = ""
-            if preshared_key != "":
-                psk = "\nPresharedKey = " + preshared_key
 
-            return_data = (
-                "[Interface]\nPrivateKey = "
-                + private_key
-                + "\nAddress = "
-                + allowed_ips
-                + "\nDNS = "
-                + dns_addresses
-                + "\nMTU = "
-                + str(mtu_value)
-                + "\n\n[Peer]\nPublicKey = "
-                + public_key
-                + "\nAllowedIPs = "
-                + endpoint_allowed_ips
-                + "\nEndpoint = "
-                + endpoint
-                + "\nPersistentKeepalive = "
-                + str(keepalive)
-                + psk
-            )
+            return_data = get_config_as_str(interface_name, peer)
             data.append({"filename": f"{filename}.conf", "content": return_data})
         return jsonify(
             {"status": True, "peers": data, "filename": f"{interface_name}.zip"}
