@@ -7,7 +7,7 @@
 
 This is a fork of Donald Zou's [original implementation](https://github.com/donaldzou/wireguard-dashboard/). I tried submitting a PR, but Donald seems to be busy with life, so I decided to fork his codebase.
 
-Goals of this form:
+Goals of this fork:
 
 1. More structure and cleaner code
 2. Multiple implementations with feature parity but different stacks (e.g. Flask/FastAPI, JQuery/Vue, etc.) to serve as educational content
