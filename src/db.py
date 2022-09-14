@@ -17,9 +17,11 @@ def get_db():
     global _db
     return _db
 
+
 def commit():
     global _db
     _db.commit()
+
 
 def connect_db(dashboard_configuration_dir: str):
     """
@@ -27,6 +29,7 @@ def connect_db(dashboard_configuration_dir: str):
     @return: sqlite3.Connection
     """
     import os
+
     global _db, _cursor
 
     _db = sqlite3.connect(
@@ -76,7 +79,7 @@ def create_peers_table():
 
 
 def get_peers_with_private_key(interface_name):
-    q_sql = """SELECT SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name
+    q_sql = """SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name
                FROM peers 
                WHERE interface=:interface_name AND private_key != ''"""
     q_data = {"interface_name": interface_name}
@@ -89,7 +92,7 @@ def get_peer_by_id(interface_name, id):
     Gets basic parameters for a given interface and peer
     """
 
-    q_sql = """SELECT SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name
+    q_sql = """SELECT private_key, allowed_ips, DNS, mtu, endpoint_allowed_ips, keepalive, preshared_key, name
                FROM peers 
                WHERE interface=:interface_name AND id=:id"""
     q_data = {"interface_name": interface_name, "id": id}
