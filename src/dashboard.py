@@ -71,9 +71,10 @@ def close_DB(exception):
     @param exception: Exception
     @return: None
     """
+    from db import commit
+
     if hasattr(g, "db"):
-        g.db.commit()
-        # g.db.close()
+        commit()
 
 
 @app.before_request
@@ -637,9 +638,8 @@ def run_dashboard():
     from default_config import dash_config
 
     config = read_and_update_config_file()
-    global UPDATE
+    global UPDATE, WG_CONF_PATH
     UPDATE = check_update(config)
-    global WG_CONF_PATH
     WG_CONF_PATH = config.get("Server", "wg_conf_path")
     connect_db(CONFIGURATION_PATH)
     create_peers_table()

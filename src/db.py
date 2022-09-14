@@ -15,9 +15,11 @@ _lock = RLock()
 
 def get_db():
     global _db
-
     return _db
 
+def commit():
+    global _db
+    _db.commit()
 
 def connect_db(dashboard_configuration_dir: str):
     """
@@ -25,18 +27,21 @@ def connect_db(dashboard_configuration_dir: str):
     @return: sqlite3.Connection
     """
     import os
-
     global _db, _cursor
 
     _db = sqlite3.connect(
         os.path.join(dashboard_configuration_dir, "db", "wgdashboard.db"),
         check_same_thread=False,
     )
+    if _db is None:
+        raise Exception("Couldn't open database")
     _db.row_factory = sqlite3.Row
     _cursor = _db.cursor()
 
 
 def execute_locked(q_sql, q_data=None):
+    global _db, _cursor
+
     locked = _lock.acquire()
     if locked:
         try:
@@ -53,8 +58,6 @@ def create_peers_table():
     """
     Creates a table for `interface_name`, if missing.
     """
-
-    global _db
 
     app.logger.debug(f"db.create_peers_table()")
     create_table = f"""
