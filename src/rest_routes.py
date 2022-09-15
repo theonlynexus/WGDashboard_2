@@ -6,7 +6,6 @@ Under Apache-2.0 License
 import subprocess
 import os
 from flask import request, redirect, jsonify, g, render_template
-from names_generator import generate_name
 from datetime import datetime
 import urllib.parse
 import urllib.request
@@ -18,38 +17,44 @@ from io import StringIO
 import db, wg, util
 
 illegal_filename_tokens = [
-                    ".",
-                    ",",
-                    "/",
-                    "?",
-                    "<",
-                    ">",
-                    "\\",
-                    ":",
-                    "*",
-                    "|" '"',
-                    "com1",
-                    "com2",
-                    "com3",
-                    "com4",
-                    "com5",
-                    "com6",
-                    "com7",
-                    "com8",
-                    "com9",
-                    "lpt1",
-                    "lpt2",
-                    "lpt3",
-                    "lpt4",
-                    "lpt5",
-                    "lpt6",
-                    "lpt7",
-                    "lpt8",
-                    "lpt9",
-                    "con",
-                    "nul",
-                    "prn",
-                ]
+    ".",
+    ",",
+    "/",
+    "?",
+    "<",
+    ">",
+    "\\",
+    ":",
+    "*",
+    "|" '"',
+    "com1",
+    "com2",
+    "com3",
+    "com4",
+    "com5",
+    "com6",
+    "com7",
+    "com8",
+    "com9",
+    "lpt1",
+    "lpt2",
+    "lpt3",
+    "lpt4",
+    "lpt5",
+    "lpt6",
+    "lpt7",
+    "lpt8",
+    "lpt9",
+    "con",
+    "nul",
+    "prn",
+]
+
+
+def generate_peer_name(interface_name, now=datetime.now()):
+    from names_generator import generate_name
+
+    return f"{interface_name}_{now.strftime('%Y%m%d%H%M%S')}_{generate_name(style='hyphen')}"
 
 
 def register_routes(app):
@@ -140,13 +145,10 @@ def register_routes(app):
         else:
             return redirect("/configuration/" + interface_name)
 
-    def clean_filename(filename:str) -> str:
+    def clean_filename(filename: str) -> str:
         global illegal_filename_tokenss
-        # from names_generator import generate_name
-        # if not filename:
-        #     return generate_name(style='hyphen')
-        
-        result = filename        
+
+        result = filename
         for i in illegal_filename_tokens:
             result = result.replace(i, "")
         result = "".join(result.split(" "))
@@ -158,7 +160,6 @@ def register_routes(app):
         filename = filename + "_" + interface_name
         peer_conf = get_config_as_str(interface_name, peer)
         return filename, peer_conf
-            
 
     @app.route("/download_all/<interface_name>", methods=["GET"])
     def download_all(interface_name):
@@ -256,8 +257,7 @@ def register_routes(app):
                 interface_name, g.WG_CONF_PATH, g.DASHBOARD_CONF_FILE
             )
             if not data["name"]:
-                from names_generator import generate_name
-                data["name"] = generate_name(style='hyphen')
+                data["name"] = generate_peer_name(interface_name)
             data = {
                 "id": public_key,
                 "name": data["name"],
@@ -517,6 +517,7 @@ def register_routes(app):
         @return: String
         """
 
+        now = datetime.now()
         data = request.get_json()
         keys = data["keys"]
         endpoint_allowed_ips = data["endpoint_allowed_ips"]
@@ -561,27 +562,29 @@ def register_routes(app):
             wg_command.append(keys[i]["allowed_ips"])
 
             tmp = data.copy()
-            tmp.update({
-                "id": keys[i]["publicKey"],
-                "name": f"{interface_name}_{generate_name(style='hyphen')}",
-                "private_key": keys[i]["privateKey"],
-                "total_receive": 0,
-                "total_sent": 0,
-                "total_data": 0,
-                "endpoint": "N/A",
-                "endpoint_allowed_ips": endpoint_allowed_ips,
-                "status": "stopped",
-                "latest_handshake": "N/A",
-                "allowed_ips": "N/A",
-                "cumu_receive": 0,
-                "cumu_sent": 0,
-                "cumu_data": 0,
-                "traffic": [],
-                "mtu": g.conf.get("Peers", "peer_mtu"),
-                "keepalive": g.conf.get("Peers", "peer_keep_alive"),
-                "remote_endpoint": g.conf.get("Peers", "remote_endpoint"),
-                "preshared_key": keys[i]["psk_file"]
-            })
+            tmp.update(
+                {
+                    "id": keys[i]["publicKey"],
+                    "name": generate_peer_name(interface_name, now),
+                    "private_key": keys[i]["privateKey"],
+                    "total_receive": 0,
+                    "total_sent": 0,
+                    "total_data": 0,
+                    "endpoint": "N/A",
+                    "endpoint_allowed_ips": endpoint_allowed_ips,
+                    "status": "stopped",
+                    "latest_handshake": "N/A",
+                    "allowed_ips": "N/A",
+                    "cumu_receive": 0,
+                    "cumu_sent": 0,
+                    "cumu_data": 0,
+                    "traffic": [],
+                    "mtu": g.conf.get("Peers", "peer_mtu"),
+                    "keepalive": g.conf.get("Peers", "peer_keep_alive"),
+                    "remote_endpoint": g.conf.get("Peers", "remote_endpoint"),
+                    "preshared_key": keys[i]["psk_file"],
+                }
+            )
             db.insert_peer(interface_name, tmp)
         try:
             status = subprocess.check_output(
