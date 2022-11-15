@@ -43,6 +43,16 @@ def connect_db(dashboard_configuration_dir: str):
 
 
 def execute_locked(q_sql, q_data=None):
+    """
+    Lock and query: actually overkill thanks to the GIL.
+    
+    SQLite complains about access from different threads: thus we pass `check_same_threads=False`
+    to `sqlite3.connect`. Tha would would be sufficient in itself, since Python will not schedule 
+    parallelly multiple threads from the same process (Global Interpreter Lock). 
+    
+    The lock implemented in this function is thus redundant, but it shouldn't hurt performance 
+    too much, and it is also educational and somewhat forward looking to a GIL-less Python.
+    """
     global _db, _cursor
 
     locked = _lock.acquire()
